@@ -131,6 +131,20 @@
   }
   .global-banner button:hover{opacity:1;}
 
+  /* ===== access gate (shared password, non-Claude hosting) ===== */
+  .access-gate{
+    position:fixed; inset:0; z-index:9999;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--paper); padding:16px;
+  }
+  .access-gate .card{ max-width:340px; width:100%; }
+  .access-gate h1{
+    font-family:"Shippori Mincho",serif; font-size:18px; font-weight:700;
+    color:var(--ink); margin-bottom:4px;
+  }
+  .access-gate p.desc{ font-size:12.5px; color:var(--ink-soft); margin-bottom:16px; }
+  .access-gate .err-text{ font-size:12px; color:var(--danger); min-height:1.4em; margin-top:4px; }
+
   /* ===== management (list) screen ===== */
   .list-toolbar{display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap;}
   .list-toolbar h2{font-size:18px; color:var(--ink); font-weight:700;}
@@ -1017,6 +1031,24 @@
   var GRID_COLS = { 2:1, 3:1, 4:2 };
   var todayStr = new Date().toISOString().slice(0,10);
 
+  // Claudeのアプリ外（Vercelなど）で開いたときに、端末やブラウザを超えて共有される
+  // 「サーバー保存」を行うためのFirebase設定。Firebaseコンソールでプロジェクトを作成し、
+  // Firestore・Storage・Authentication（匿名ログイン）を有効にした上で、
+  // 「プロジェクトの設定」＞「マイアプリ」の設定値をここに貼り付けてください。
+  // 空欄のままの場合は、このブラウザだけに保存するモード（端末間では共有されません）で動作します。
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBsPQmIRvV9wiDpF3KxowDkRaRrBz6Zr1g",
+    authDomain: "shashinappp.firebaseapp.com",
+    projectId: "shashinappp",
+    storageBucket: "shashinappp.firebasestorage.app",
+    messagingSenderId: "258586730394",
+    appId: "1:258586730394:web:4bf79b83904901700ae423",
+    measurementId: "G-FC4RFJCCPQ"
+  };
+  function firebaseConfigured(){
+    return !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
+  }
+
   function uid(prefix){ return (prefix||"r") + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
 
   function defaultMasters(){
@@ -1095,11 +1127,12 @@
   }
 
   // 画像の実際のURLを解決する。Claudeのアプリ内ではアップロード済み画像は "/_blob/<id>" で
-  // 配信されるが、Claude外（ローカル保存モード）ではブラウザ内に保存したBlobから作った
-  // オブジェクトURLを返す。
+  // 配信されるが、Claude外（Firebaseサーバー保存モード／ブラウザ内ローカル保存モード）では
+  // それぞれの保存先から取得したURL（Firebaseのダウンロードリンク、またはブラウザ内Blobの
+  // オブジェクトURL）をキャッシュから返す。
   function assetUrl(id){
     if(!id) return "";
-    if(LOCAL_MODE) return localAssetUrlCache[id] || "";
+    if(LOCAL_MODE || CLOUD_MODE) return assetUrlCache[id] || "";
     return "/_blob/" + id;
   }
 
@@ -1224,7 +1257,8 @@
 
   // ---------- capabilities & in-memory caches ----------
   var dbCap = null, assetsCap = null, mcpCap = null;
-  var LOCAL_MODE = false; // Claudeのアプリ外（Vercelなど単独ホスティング）で開いた場合にtrue
+  var LOCAL_MODE = false; // Claudeのアプリ外で、Firebase未設定またはFirebase接続失敗時にtrue（この端末のみ）
+  var CLOUD_MODE = false; // Claudeのアプリ外で、Firebase経由のサーバー保存が有効なときtrue（全員で共有）
   var reportsCache = {};
   var masters = defaultMasters();
   var settings = { defaultCompany: "", defaultPhotographerLastName: "", defaultPhotographerFirstName: "" };
@@ -3272,7 +3306,7 @@
   // 使えない。その場合はエラーで止めず、このブラウザのIndexedDBにデータと画像を保存して
   // 動作を続ける（このブラウザ・この端末だけに保存され、他の端末とは共有されない）。
   var localIdb = null;
-  var localAssetUrlCache = {};
+  var assetUrlCache = {};
   var LOCAL_DB_NAME = "photoReportLocalDB";
   var LOCAL_DB_VERSION = 1;
 
@@ -3309,7 +3343,7 @@
   function preloadLocalAssetUrls(){
     return idbReq(idbStore("assets", "readonly").getAll()).then(function(rows){
       (rows || []).forEach(function(row){
-        try{ localAssetUrlCache[row.id] = URL.createObjectURL(row.blob); }catch(e){}
+        try{ assetUrlCache[row.id] = URL.createObjectURL(row.blob); }catch(e){}
       });
     }).catch(function(){});
   }
@@ -3361,7 +3395,7 @@
         return idbReq(idbStore("assets", "readwrite").add({ id: id, blob: blob, contentType: contentType, sizeBytes: sizeBytes })).then(function(){
           var url = "";
           try{ url = URL.createObjectURL(blob); }catch(e){}
-          localAssetUrlCache[id] = url;
+          assetUrlCache[id] = url;
           return { id: id, url: url, sizeBytes: sizeBytes, contentType: contentType };
         });
       },
@@ -3375,15 +3409,13 @@
         });
       },
       delete: function(id){
-        delete localAssetUrlCache[id];
+        delete assetUrlCache[id];
         return idbReq(idbStore("assets", "readwrite").delete(id));
       }
     };
   }
 
-  // window.claude（Claudeのケーパビリティ）が無い場合に、ローカル保存へ切り替える。
-  function prepareLocalFallback(caps){
-    if(caps && caps[0]) return Promise.resolve(caps); // Claude環境で db が使える場合はそのまま
+  function prepareLocalIdbFallback(){
     LOCAL_MODE = true;
     return openLocalDB().then(function(idb){
       localIdb = idb;
@@ -3392,8 +3424,175 @@
       return [createLocalDbCap(), createLocalAssetsCap(), null];
     }).catch(function(){
       LOCAL_MODE = false;
-      return caps; // IndexedDBも使えない場合はあきらめて元の（null埋めの）状態を返す
+      return [null, null, null]; // IndexedDBも使えない場合はあきらめる
     });
+  }
+
+  // ---------- Firebase（Googleのサーバー）への保存 ----------
+  // window.claude が無い環境（Vercelなど）では、db/assetsケーパビリティの代わりに
+  // Firebase（Firestore + Storage）を使い、複数端末・複数人で共有される保存先にする。
+  // 設定（FIREBASE_CONFIG）はファイル冒頭で定義済み。
+  var FIREBASE_SDK_VERSION = "10.14.1";
+  var FIREBASE_ASSET_PREFIX = "assets/";
+  var preloadAssetUrls = function(){ return Promise.resolve(); }; // モードに応じて後で差し替える
+
+  function loadScriptTag(src){
+    return new Promise(function(resolve, reject){
+      var s = document.createElement("script");
+      s.src = src;
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ reject(new Error("script-load-failed:" + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function loadFirebaseSdk(){
+    if(window.firebase && window.firebase.apps) return Promise.resolve();
+    var base = "https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/";
+    var files = ["firebase-app-compat.js", "firebase-auth-compat.js", "firebase-firestore-compat.js", "firebase-storage-compat.js"];
+    return files.reduce(function(chain, file){
+      return chain.then(function(){ return loadScriptTag(base + file); });
+    }, Promise.resolve());
+  }
+
+  function collectReferencedAssetIds(){
+    var ids = {};
+    Object.keys(reportsCache).forEach(function(rid){
+      (reportsCache[rid].photos || []).forEach(function(p){ if(p.assetId) ids[p.assetId] = true; });
+    });
+    (masters.blackboards || []).forEach(function(b){ if(b.assetId) ids[b.assetId] = true; });
+    return Object.keys(ids);
+  }
+
+  function createFirebaseAssetsCap(app){
+    var rootRef = app.storage().ref();
+    return {
+      upload: function(blob){
+        var id = localUid("a");
+        var contentType = blob.type || "application/octet-stream";
+        var sizeBytes = blob.size || 0;
+        var ref = rootRef.child(FIREBASE_ASSET_PREFIX + id);
+        return ref.put(blob, { contentType: contentType }).then(function(){
+          return ref.getDownloadURL();
+        }).then(function(url){
+          assetUrlCache[id] = url;
+          return { id: id, url: url, sizeBytes: sizeBytes, contentType: contentType };
+        });
+      },
+      list: function(){
+        return rootRef.child(FIREBASE_ASSET_PREFIX.slice(0, -1)).listAll().then(function(res){
+          return Promise.all(res.items.map(function(item){
+            return item.getMetadata().catch(function(){ return { size: 0, contentType: "" }; });
+          })).then(function(metas){
+            var bytes = metas.reduce(function(sum, m){ return sum + (m.size || 0); }, 0);
+            return {
+              assets: res.items.map(function(item, i){ return { id: item.name, sizeBytes: metas[i].size, contentType: metas[i].contentType }; }),
+              usage: { bytes: bytes, maxBytes: 5 * 1024 * 1024 * 1024 }
+            };
+          });
+        }).catch(function(){ return { assets: [], usage: { bytes: 0, maxBytes: 5 * 1024 * 1024 * 1024 } }; });
+      },
+      delete: function(id){
+        delete assetUrlCache[id];
+        return rootRef.child(FIREBASE_ASSET_PREFIX + id).delete();
+      }
+    };
+  }
+
+  function preloadFirebaseAssetUrls(app){
+    var rootRef = app.storage().ref();
+    var ids = collectReferencedAssetIds().filter(function(id){ return !assetUrlCache[id]; });
+    if(!ids.length) return Promise.resolve();
+    return Promise.all(ids.map(function(id){
+      return rootRef.child(FIREBASE_ASSET_PREFIX + id).getDownloadURL().then(function(url){
+        assetUrlCache[id] = url;
+      }).catch(function(){});
+    }));
+  }
+
+  function prepareFirebaseFallback(){
+    return loadFirebaseSdk().then(function(){
+      var app = (window.firebase.apps && window.firebase.apps.length) ? window.firebase.app() : window.firebase.initializeApp(FIREBASE_CONFIG);
+      return app.auth().signInAnonymously().then(function(){ return app; });
+    }).then(function(app){
+      CLOUD_MODE = true;
+      preloadAssetUrls = function(){ return preloadFirebaseAssetUrls(app); };
+      return [app.firestore(), createFirebaseAssetsCap(app), null];
+    });
+  }
+
+  // window.claude（Claudeのケーパビリティ）が無い場合に、Firebase→ローカル保存の順で切り替える。
+  function prepareFallback(caps){
+    if(caps && caps[0]) return Promise.resolve(caps); // Claude環境で db が使える場合はそのまま
+    if(firebaseConfigured()){
+      return prepareFirebaseFallback().catch(function(){
+        CLOUD_MODE = false;
+        return prepareLocalIdbFallback();
+      });
+    }
+    return prepareLocalIdbFallback();
+  }
+
+  // ---------- アクセスゲート（共通パスワード） ----------
+  // Claudeのアプリ外（Vercelなど）で開いたときだけ表示する簡易的な合言葉画面。
+  // 本格的なログイン機能ではなく、URLを知らない第三者による誤アクセスを減らすためのもの。
+  var ACCESS_PASSWORD_HASH = "d0e56b614576d1f0bece1ba5018c9ee312fd8cd306d41a5a8c91da0aa1bc6a7c";
+  var ACCESS_GATE_STORAGE_KEY = "photoReportGateUnlocked";
+
+  function sha256Hex(text){
+    var enc = new TextEncoder().encode(text);
+    return crypto.subtle.digest("SHA-256", enc).then(function(buf){
+      return Array.prototype.map.call(new Uint8Array(buf), function(b){ return b.toString(16).padStart(2, "0"); }).join("");
+    });
+  }
+
+  function showAccessGate(onSuccess){
+    try{
+      if(localStorage.getItem(ACCESS_GATE_STORAGE_KEY) === "1"){ onSuccess(); return; }
+    }catch(e){}
+
+    var overlay = document.createElement("div");
+    overlay.className = "access-gate";
+    overlay.innerHTML =
+      '<div class="card">' +
+        '<h1>写真報告書</h1>' +
+        '<p class="desc">合い言葉を入力してください</p>' +
+        '<div class="field">' +
+          '<input type="password" id="accessGateInput" autocomplete="off" placeholder="合い言葉">' +
+          '<div class="err-text" id="accessGateErr"></div>' +
+        '</div>' +
+        '<button type="button" class="btn btn-primary btn-block" id="accessGateBtn">入る</button>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    var input = overlay.querySelector("#accessGateInput");
+    var err = overlay.querySelector("#accessGateErr");
+    var btn = overlay.querySelector("#accessGateBtn");
+
+    function tryUnlock(){
+      var value = input.value || "";
+      if(!value){ input.focus(); return; }
+      btn.disabled = true;
+      sha256Hex(value).then(function(hex){
+        btn.disabled = false;
+        if(hex === ACCESS_PASSWORD_HASH){
+          try{ localStorage.setItem(ACCESS_GATE_STORAGE_KEY, "1"); }catch(e){}
+          overlay.remove();
+          onSuccess();
+        } else {
+          err.textContent = "合い言葉が違います";
+          input.value = "";
+          input.focus();
+        }
+      }).catch(function(){
+        btn.disabled = false;
+        err.textContent = "確認できませんでした。もう一度お試しください。";
+      });
+    }
+
+    btn.addEventListener("click", tryUnlock);
+    input.addEventListener("keydown", function(e){ if(e.key === "Enter") tryUnlock(); });
+    input.focus();
   }
 
   // ---------- load / refresh from the server ----------
@@ -3426,6 +3625,8 @@
           reportsCache[ref.id] = reportFromDoc(ref.id, seedBody);
         });
       }
+    }).then(function(){
+      return preloadAssetUrls();
     }).then(function(){
       hideBanner();
     }, function(){
@@ -3460,36 +3661,48 @@
   // ---------- boot ----------
   switchView();
   renderReportList();
-  showBanner("サーバーに接続しています…");
 
   var useFn = (window.claude && window.claude.use) ? window.claude.use.bind(window.claude) : null;
-  var capsPromise = useFn
-    ? Promise.all([useFn("db"), useFn("assets"), useFn("mcp")]).catch(function(){ return [null, null, null]; })
-    : Promise.resolve([null, null, null]);
 
-  capsPromise.then(function(caps){
-    return prepareLocalFallback(caps);
-  }).then(function(caps){
-    dbCap = caps[0]; assetsCap = caps[1]; mcpCap = caps[2];
-    if(mcpCap && elEmailPdfRow){
-      elEmailPdfRow.hidden = false;
-      try{
-        var savedTo = localStorage.getItem("photoReportEmailTo");
-        if(savedTo) elEmailPdfTo.value = savedTo;
-      }catch(e){}
-    }
-    if(!dbCap){
-      showBanner("データを保存できる環境がありません。Claudeのアプリ内でこのページを開くか、対応ブラウザでお試しください。", "err");
-      return;
-    }
-    var loaded = reloadAll(true);
-    if(LOCAL_MODE){
-      loaded.then(function(){
-        showBanner("このブラウザ内にデータを保存しています（この端末・このブラウザだけで有効です）");
-        setTimeout(hideBanner, 4000);
-      });
-    }
-    return loaded;
-  });
+  function startApp(caps){
+    return prepareFallback(caps).then(function(resolvedCaps){
+      dbCap = resolvedCaps[0]; assetsCap = resolvedCaps[1]; mcpCap = resolvedCaps[2];
+      if(mcpCap && elEmailPdfRow){
+        elEmailPdfRow.hidden = false;
+        try{
+          var savedTo = localStorage.getItem("photoReportEmailTo");
+          if(savedTo) elEmailPdfTo.value = savedTo;
+        }catch(e){}
+      }
+      if(!dbCap){
+        showBanner("データを保存できる環境がありません。Claudeのアプリ内でこのページを開くか、対応ブラウザでお試しください。", "err");
+        return;
+      }
+      var loaded = reloadAll(true);
+      if(CLOUD_MODE){
+        loaded.then(function(){
+          showBanner("Firebase（Googleサーバー）にデータを保存しています");
+          setTimeout(hideBanner, 4000);
+        });
+      } else if(LOCAL_MODE){
+        loaded.then(function(){
+          showBanner("このブラウザ内にデータを保存しています（この端末・このブラウザだけで有効です）");
+          setTimeout(hideBanner, 4000);
+        });
+      }
+      return loaded;
+    });
+  }
+
+  if(useFn){
+    showBanner("サーバーに接続しています…");
+    Promise.all([useFn("db"), useFn("assets"), useFn("mcp")]).catch(function(){ return [null, null, null]; })
+      .then(startApp);
+  } else {
+    showAccessGate(function(){
+      showBanner("サーバーに接続しています…");
+      startApp([null, null, null]);
+    });
+  }
 })();
 </script>
