@@ -435,6 +435,13 @@
   .angle-inline-btn.primary:hover{filter:brightness(1.06);}
   .empty-list{font-size:12px; color:var(--ink-faint); text-align:center; padding:14px 6px;}
 
+  .email-pdf-row{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .email-pdf-row input{
+    flex:1 1 160px; min-width:0; font:inherit; font-size:12.5px; padding:8px 10px; border-radius:7px;
+    border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink);
+  }
+  .email-pdf-row .btn{flex:none;}
+
   .hint{font-size:11px; color:var(--ink-faint); line-height:1.6; margin-top:10px;}
   .status-line{font-size:12px; color:var(--navy); min-height:16px;}
   .status-line.err{color:var(--danger);}
@@ -936,6 +943,10 @@
 
         <section class="card">
           <button class="btn btn-primary btn-block" id="exportBtn">PDFを書き出す</button>
+          <div class="email-pdf-row" id="emailPdfRow" hidden>
+            <input type="email" id="emailPdfTo" placeholder="送り先メールアドレス">
+            <button type="button" class="btn btn-ghost btn-sm" id="emailPdfBtn">📧 メールで送る</button>
+          </div>
           <div class="status-line" id="statusLine"></div>
           <button class="btn btn-danger-outline btn-block" id="clearBtn" style="margin-top:8px;">すべての写真を削除</button>
           <p class="hint">写真とコメントはサーバーに保存され、同じアカウントであればどの端末からも見られます。作成したPDFは印刷してそのまま提出書類として使えます。</p>
@@ -1169,7 +1180,7 @@
   }
 
   // ---------- capabilities & in-memory caches ----------
-  var dbCap = null, assetsCap = null;
+  var dbCap = null, assetsCap = null, mcpCap = null;
   var reportsCache = {};
   var masters = defaultMasters();
   var settings = { defaultCompany: "", defaultPhotographerLastName: "", defaultPhotographerFirstName: "" };
@@ -1217,6 +1228,7 @@
       elAnglePairsPanel = $("anglePairsPanel"), elAnglePairsList = $("anglePairsList"),
       elPhotoList = $("photoList"), elPages = $("pages"), elPageCount = $("pageCount"),
       elTopStat = $("topStat"), elExportBtn = $("exportBtn"), elStatus = $("statusLine"),
+      elEmailPdfRow = $("emailPdfRow"), elEmailPdfTo = $("emailPdfTo"), elEmailPdfBtn = $("emailPdfBtn"),
       elClearBtn = $("clearBtn"), elPageDecBtn = $("pageDecBtn"), elPageIncBtn = $("pageIncBtn"),
       elPageCountLabel = $("pageCountLabel");
 
@@ -2999,23 +3011,28 @@
     exportPdf();
   });
 
-  function exportPdf(){
-    elExportBtn.disabled = true;
-    setStatus("PDFを作成しています…（写真の枚数により時間がかかります）");
-
-    var pageEls = Array.prototype.slice.call(elPages.querySelectorAll(".a4-page"));
-    if(!pageEls.length){
-      elExportBtn.disabled = false;
-      setStatus("書き出すページがありません", "err");
+  elEmailPdfBtn.addEventListener("click", function(){
+    if(!report || !report.photos.length){
+      setStatus("先に写真を追加してください", "err");
       return;
     }
+    emailPdf();
+  });
+
+  function pdfFileName(){
+    var name = (report.meta.title || "写真報告書").replace(/[\\/:*?"<>|]/g,"").trim() || "写真報告書";
+    var date = report.meta.date || todayStr;
+    return name + "_" + date + ".pdf";
+  }
+
+  // A4プレビューを1ページずつ画像化してPDFにまとめる。書き出し（ダウンロード）と
+  // メール送信の両方から使う共通処理。
+  function buildPdfBlob(){
+    var pageEls = Array.prototype.slice.call(elPages.querySelectorAll(".a4-page"));
+    if(!pageEls.length) return Promise.reject({ code: "no-pages" });
 
     var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
-    if(!jsPDFCtor || !window.html2canvas){
-      elExportBtn.disabled = false;
-      setStatus("PDF機能の読み込みに失敗しました。再読み込みしてください。", "err");
-      return;
-    }
+    if(!jsPDFCtor || !window.html2canvas) return Promise.reject({ code: "lib-missing" });
 
     var pdf = new jsPDFCtor({ orientation: "portrait", unit: "mm", format: "a4" });
     var pageW = pdf.internal.pageSize.getWidth();
@@ -3032,9 +3049,29 @@
       });
     });
 
+    return chain.then(function(){ return pdf.output("blob"); });
+  }
+
+  function blobToBase64(blob){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){
+        var result = reader.result || "";
+        var idx = result.indexOf(",");
+        resolve(idx >= 0 ? result.slice(idx + 1) : result);
+      };
+      reader.onerror = function(){ reject(new Error("read-failed")); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function exportPdf(){
+    elExportBtn.disabled = true;
+    setStatus("PDFを作成しています…（写真の枚数により時間がかかります）");
+
     var blob;
-    chain.then(function(){
-      blob = pdf.output("blob");
+    buildPdfBlob().then(function(b){
+      blob = b;
       return (window.claude && window.claude.use) ? window.claude.use("downloads") : null;
     }).then(function(downloads){
       if(!downloads){
@@ -3042,9 +3079,7 @@
         elExportBtn.disabled = false;
         return null;
       }
-      var name = (report.meta.title || "写真報告書").replace(/[\\/:*?"<>|]/g,"").trim() || "写真報告書";
-      var date = report.meta.date || todayStr;
-      return downloads.save({ filename: name + "_" + date + ".pdf", data: blob });
+      return downloads.save({ filename: pdfFileName(), data: blob });
     }).then(function(result){
       elExportBtn.disabled = false;
       if(result && result.status === "saved"){
@@ -3057,10 +3092,64 @@
       var code = err && err.code;
       if(code === "declined"){
         setStatus("");
+      } else if(code === "no-pages"){
+        setStatus("書き出すページがありません", "err");
+      } else if(code === "lib-missing"){
+        setStatus("PDF機能の読み込みに失敗しました。再読み込みしてください。", "err");
       } else if(code === "rate_limited"){
         setStatus("少し待ってからもう一度お試しください", "err");
       } else {
         setStatus("PDFの作成に失敗しました。もう一度お試しください。", "err");
+      }
+    });
+  }
+
+  function emailPdf(){
+    if(!mcpCap){
+      setStatus("この環境ではメール送信に対応していません。", "err");
+      return;
+    }
+    var to = (elEmailPdfTo.value || "").trim();
+    if(!to){
+      setStatus("送り先メールアドレスを入力してください", "err");
+      elEmailPdfTo.focus();
+      return;
+    }
+    elEmailPdfBtn.disabled = true;
+    setStatus("PDFを作成してメールを送信しています…");
+    buildPdfBlob().then(function(blob){
+      return blobToBase64(blob);
+    }).then(function(base64){
+      var subject = (report.meta.title || "写真報告書") + "（" + (report.meta.date || todayStr) + "）";
+      var lines = ["写真報告書を添付いたします。", ""];
+      if(report.meta.siteName) lines.push("現場名：" + report.meta.siteName);
+      if(report.meta.title) lines.push("発注者：" + report.meta.title);
+      lines.push("日付：" + (report.meta.date || todayStr));
+      return mcpCap.callTool("Gmail", "send_message", {
+        to: [to],
+        subject: subject,
+        body: lines.join("\n"),
+        attachments: [{ content: base64, filename: pdfFileName(), mimeType: "application/pdf" }]
+      });
+    }).then(function(){
+      elEmailPdfBtn.disabled = false;
+      setStatus("メールを送信しました", "ok");
+      try{ localStorage.setItem("photoReportEmailTo", to); }catch(e){}
+    }).catch(function(err){
+      elEmailPdfBtn.disabled = false;
+      var code = err && err.code;
+      if(code === "no-pages"){
+        setStatus("送信するページがありません", "err");
+      } else if(code === "lib-missing"){
+        setStatus("PDF機能の読み込みに失敗しました。再読み込みしてください。", "err");
+      } else if(code === "server_not_connected"){
+        setStatus("Gmailが接続されていません。claude.aiでGmail連携を設定してください。", "err");
+      } else if(code === "not_granted"){
+        setStatus("メール送信が許可されていません。", "err");
+      } else if(code === "rate_limited"){
+        setStatus("混み合っています。少し待ってからもう一度お試しください。", "err");
+      } else {
+        setStatus("メール送信に失敗しました。もう一度お試しください。", "err");
       }
     });
   }
@@ -3125,11 +3214,18 @@
 
   var useFn = (window.claude && window.claude.use) ? window.claude.use.bind(window.claude) : null;
   var capsPromise = useFn
-    ? Promise.all([useFn("db"), useFn("assets")]).catch(function(){ return [null, null]; })
-    : Promise.resolve([null, null]);
+    ? Promise.all([useFn("db"), useFn("assets"), useFn("mcp")]).catch(function(){ return [null, null, null]; })
+    : Promise.resolve([null, null, null]);
 
   capsPromise.then(function(caps){
-    dbCap = caps[0]; assetsCap = caps[1];
+    dbCap = caps[0]; assetsCap = caps[1]; mcpCap = caps[2];
+    if(mcpCap && elEmailPdfRow){
+      elEmailPdfRow.hidden = false;
+      try{
+        var savedTo = localStorage.getItem("photoReportEmailTo");
+        if(savedTo) elEmailPdfTo.value = savedTo;
+      }catch(e){}
+    }
     if(!dbCap){
       showBanner("この環境ではサーバー保存に対応していません。Claudeのアプリ内でこのページを開いてください。", "err");
       return;
