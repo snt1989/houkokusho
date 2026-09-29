@@ -2560,13 +2560,7 @@
   function renderAnglePairsPanel(){
     if(!elAnglePairsPanel) return;
     elAnglePairsList.innerHTML = "";
-    var pairs = [];
-    if(report && report.photos.length){
-      report.photos.forEach(function(photo, i){
-        var before = pairedBeforePhoto(i);
-        if(isAngleCheckPair(before, photo)) pairs.push({ before: before, after: photo, afterIndex: i });
-      });
-    }
+    var pairs = computeAnglePairs();
     if(!pairs.length){ elAnglePairsPanel.hidden = true; return; }
     elAnglePairsPanel.hidden = false;
     pairs.forEach(function(pair){
@@ -2586,7 +2580,7 @@
 
       var idxLabel = document.createElement("div");
       idxLabel.className = "angle-pair-idx";
-      idxLabel.textContent = String(pair.afterIndex).padStart(2,"0") + " → " + String(pair.afterIndex+1).padStart(2,"0") + " 枚目";
+      idxLabel.textContent = String(pair.beforeIndex+1).padStart(2,"0") + " → " + String(pair.afterIndex+1).padStart(2,"0") + " 枚目";
       row.appendChild(idxLabel);
 
       row.appendChild(buildAngleSidebarRow(pair.before, pair.after));
@@ -2893,15 +2887,53 @@
     });
   }
 
-  // 「作業前」の直後に並ぶ「作業後」写真をペアとみなす（一覧の並び順そのままで判定するので、
-  // 1ページあたりの枚数やグリッドの列数に左右されない）。
-  function pairedBeforePhoto(index){
-    if(!report || index <= 0) return null;
-    return report.photos[index - 1] || null;
-  }
-
   function isAngleCheckPair(beforePhoto, afterPhoto){
     return !!(afterPhoto && beforePhoto && afterPhoto.category === "作業後" && beforePhoto.category === "作業前" && photoHasImage(afterPhoto) && photoHasImage(beforePhoto));
+  }
+
+  // レイアウト（1ページあたりの枚数）に応じてペアの決め方を変える。
+  // ・1列のレイアウト（2枚 / 3枚など）：ページ内の並び順に関わらず「作業前」と「作業後」を判定
+  // ・2列のレイアウト（4枚）：同じ列で上下に並んでいる場合のみ判定（1ページに2組あれば2組とも判定）
+  function computeAnglePairs(){
+    var pairs = [];
+    if(!report || !report.photos.length) return pairs;
+    var perPage = report.perPage || 4;
+    var cols = GRID_COLS[perPage] || 1;
+    var pageCount = Math.ceil(report.photos.length / perPage);
+
+    for(var gi=0; gi<pageCount; gi++){
+      var pagePhotos = [];
+      for(var i=0; i<perPage; i++){
+        var globalIndex = gi * perPage + i;
+        var photo = report.photos[globalIndex];
+        if(!photo) continue;
+        pagePhotos.push({ photo: photo, index: globalIndex, col: i % cols, row: Math.floor(i / cols) });
+      }
+
+      if(cols >= 2){
+        for(var c=0; c<cols; c++){
+          var colItems = pagePhotos.filter(function(p){ return p.col === c; })
+            .sort(function(a,b){ return a.row - b.row; });
+          for(var k=0; k<colItems.length - 1; k++){
+            var top = colItems[k], bottom = colItems[k+1];
+            if(isAngleCheckPair(top.photo, bottom.photo)){
+              pairs.push({ before: top.photo, beforeIndex: top.index, after: bottom.photo, afterIndex: bottom.index });
+            }
+          }
+        }
+      } else {
+        var befores = pagePhotos.filter(function(p){ return p.photo.category === "作業前"; });
+        var afters = pagePhotos.filter(function(p){ return p.photo.category === "作業後"; });
+        var n = Math.min(befores.length, afters.length);
+        for(var j=0; j<n; j++){
+          var b = befores[j], a = afters[j];
+          if(isAngleCheckPair(b.photo, a.photo)){
+            pairs.push({ before: b.photo, beforeIndex: b.index, after: a.photo, afterIndex: a.index });
+          }
+        }
+      }
+    }
+    return pairs;
   }
 
   function buildAngleSidebarRow(beforePhoto, afterPhoto){
