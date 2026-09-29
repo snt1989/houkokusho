@@ -435,6 +435,7 @@
   .angle-inline-btn.primary:hover{filter:brightness(1.06);}
   .empty-list{font-size:12px; color:var(--ink-faint); text-align:center; padding:14px 6px;}
 
+  .pdf-size-field{margin-bottom:10px;}
   .email-pdf-row{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
   .email-pdf-row input{
     flex:1 1 160px; min-width:0; font:inherit; font-size:12.5px; padding:8px 10px; border-radius:7px;
@@ -964,6 +965,14 @@
         </section>
 
         <section class="card">
+          <div class="field pdf-size-field">
+            <label for="pdfSizeSelect">PDFのファイルサイズ</label>
+            <select id="pdfSizeSelect">
+              <option value="small">小（軽量・メール共有向け）</option>
+              <option value="standard" selected>標準</option>
+              <option value="high">大（高画質・印刷向け）</option>
+            </select>
+          </div>
           <button class="btn btn-primary btn-block" id="exportBtn">PDFを書き出す</button>
           <div class="email-pdf-row" id="emailPdfRow" hidden>
             <input type="email" id="emailPdfTo" placeholder="送り先メールアドレス" list="masterEmailList">
@@ -1256,6 +1265,7 @@
       elAnglePairsPanel = $("anglePairsPanel"), elAnglePairsList = $("anglePairsList"),
       elPhotoList = $("photoList"), elPages = $("pages"), elPageCount = $("pageCount"),
       elTopStat = $("topStat"), elExportBtn = $("exportBtn"), elStatus = $("statusLine"),
+      elPdfSizeSelect = $("pdfSizeSelect"),
       elEmailPdfRow = $("emailPdfRow"), elEmailPdfTo = $("emailPdfTo"), elEmailPdfBtn = $("emailPdfBtn"),
       elClearBtn = $("clearBtn"), elPageDecBtn = $("pageDecBtn"), elPageIncBtn = $("pageIncBtn"),
       elPageCountLabel = $("pageCountLabel");
@@ -3074,9 +3084,22 @@
     return name + "_" + date + ".pdf";
   }
 
+  // PDFのファイルサイズ（画質）プリセット。scaleは1ページを画像化する際の解像度倍率、
+  // qualityはJPEG圧縮率。値が大きいほど高画質・大容量になる。
+  var PDF_SIZE_PRESETS = {
+    small:    { scale: 1,   quality: 0.55 },
+    standard: { scale: 2,   quality: 0.92 },
+    high:     { scale: 2.6, quality: 0.97 }
+  };
+  function currentPdfSizePreset(){
+    var key = (elPdfSizeSelect && elPdfSizeSelect.value) || "standard";
+    return PDF_SIZE_PRESETS[key] || PDF_SIZE_PRESETS.standard;
+  }
+
   // A4プレビューを1ページずつ画像化してPDFにまとめる。書き出し（ダウンロード）と
   // メール送信の両方から使う共通処理。
-  function buildPdfBlob(){
+  function buildPdfBlob(preset){
+    preset = preset || PDF_SIZE_PRESETS.standard;
     var pageEls = Array.prototype.slice.call(elPages.querySelectorAll(".a4-page"));
     if(!pageEls.length) return Promise.reject({ code: "no-pages" });
 
@@ -3090,9 +3113,9 @@
     var chain = Promise.resolve();
     pageEls.forEach(function(pageEl, i){
       chain = chain.then(function(){
-        return window.html2canvas(pageEl, { scale: 2, backgroundColor: "#FDFCF8", useCORS: true });
+        return window.html2canvas(pageEl, { scale: preset.scale, backgroundColor: "#FDFCF8", useCORS: true });
       }).then(function(canvas){
-        var imgData = canvas.toDataURL("image/jpeg", 0.92);
+        var imgData = canvas.toDataURL("image/jpeg", preset.quality);
         if(i > 0) pdf.addPage();
         pdf.addImage(imgData, "JPEG", 0, 0, pageW, pageH);
       });
@@ -3119,7 +3142,7 @@
     setStatus("PDFを作成しています…（写真の枚数により時間がかかります）");
 
     var blob;
-    buildPdfBlob().then(function(b){
+    buildPdfBlob(currentPdfSizePreset()).then(function(b){
       blob = b;
       return (window.claude && window.claude.use) ? window.claude.use("downloads") : null;
     }).then(function(downloads){
@@ -3166,7 +3189,7 @@
     }
     elEmailPdfBtn.disabled = true;
     setStatus("PDFを作成してメールを送信しています…");
-    buildPdfBlob().then(function(blob){
+    buildPdfBlob(currentPdfSizePreset()).then(function(blob){
       return blobToBase64(blob);
     }).then(function(base64){
       var subject = (report.meta.title || "写真報告書") + "（" + (report.meta.date || todayStr) + "）";
@@ -3255,6 +3278,14 @@
   }
 
   elRefreshBtn.addEventListener("click", function(){ reloadAll(false); });
+
+  elPdfSizeSelect.addEventListener("change", function(){
+    try{ localStorage.setItem("photoReportPdfSize", elPdfSizeSelect.value); }catch(e){}
+  });
+  try{
+    var savedPdfSize = localStorage.getItem("photoReportPdfSize");
+    if(savedPdfSize && PDF_SIZE_PRESETS[savedPdfSize]) elPdfSizeSelect.value = savedPdfSize;
+  }catch(e){}
 
   // ---------- boot ----------
   switchView();
