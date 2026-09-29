@@ -3430,10 +3430,14 @@
 
   // ---------- Firebase（Googleのサーバー）への保存 ----------
   // window.claude が無い環境（Vercelなど）では、db/assetsケーパビリティの代わりに
-  // Firebase（Firestore + Storage）を使い、複数端末・複数人で共有される保存先にする。
+  // Firebase Firestore を使い、複数端末・複数人で共有される保存先にする。
+  // Firebase Storage は無料（Spark）プランでは使えない（Blazeへの課金アップグレードが必要）ため、
+  // 写真・黒板画像も縮小＋再圧縮した上でBase64文字列としてFirestoreのドキュメントに保存する
+  // （Firestore自体は無料プランのままで使える）。1ドキュメントの上限（1MiB）に収まるよう、
+  // 画像はここでサイズ・画質を自動調整する。
   // 設定（FIREBASE_CONFIG）はファイル冒頭で定義済み。
   var FIREBASE_SDK_VERSION = "10.14.1";
-  var FIREBASE_ASSET_PREFIX = "assets/";
+  var FIRESTORE_DOC_CHAR_LIMIT = 900000; // Firestoreの1ドキュメント1MiB制限に対する安全マージン込みの目安
   var preloadAssetUrls = function(){ return Promise.resolve(); }; // モードに応じて後で差し替える
 
   function loadScriptTag(src){
@@ -3449,7 +3453,7 @@
   function loadFirebaseSdk(){
     if(window.firebase && window.firebase.apps) return Promise.resolve();
     var base = "https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/";
-    var files = ["firebase-app-compat.js", "firebase-auth-compat.js", "firebase-firestore-compat.js", "firebase-storage-compat.js"];
+    var files = ["firebase-app-compat.js", "firebase-auth-compat.js", "firebase-firestore-compat.js"];
     return files.reduce(function(chain, file){
       return chain.then(function(){ return loadScriptTag(base + file); });
     }, Promise.resolve());
@@ -3464,48 +3468,101 @@
     return Object.keys(ids);
   }
 
+  function readBlobAsDataUrl(blob){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(reader.result || ""); };
+      reader.onerror = function(){ reject(new Error("read-failed")); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // 画像をFirestoreの1ドキュメント上限に収まるサイズ・画質まで自動的に縮小・再圧縮する。
+  function resizeImageForFirestore(blob){
+    return readBlobAsDataUrl(blob).then(function(dataUrl){
+      return new Promise(function(resolve, reject){
+        var img = new Image();
+        img.onload = function(){
+          var dims = [1400, 1000, 700, 480];
+          var di = 0;
+          function renderAt(maxDim){
+            var scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+            var w = Math.max(1, Math.round(img.naturalWidth * scale));
+            var h = Math.max(1, Math.round(img.naturalHeight * scale));
+            var canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            return canvas;
+          }
+          function attempt(){
+            var canvas = renderAt(dims[di]);
+            function tryQuality(q){
+              var out = canvas.toDataURL("image/jpeg", q);
+              if(out.length > FIRESTORE_DOC_CHAR_LIMIT && q > 0.35){
+                tryQuality(Math.round((q - 0.1) * 100) / 100);
+              } else if(out.length > FIRESTORE_DOC_CHAR_LIMIT && di < dims.length - 1){
+                di++;
+                attempt();
+              } else {
+                resolve(out);
+              }
+            }
+            tryQuality(0.82);
+          }
+          attempt();
+        };
+        img.onerror = function(){ reject(new Error("image-decode-failed")); };
+        img.src = dataUrl;
+      });
+    });
+  }
+
   function createFirebaseAssetsCap(app){
-    var rootRef = app.storage().ref();
+    var db = app.firestore();
     return {
       upload: function(blob){
         var id = localUid("a");
-        var contentType = blob.type || "application/octet-stream";
-        var sizeBytes = blob.size || 0;
-        var ref = rootRef.child(FIREBASE_ASSET_PREFIX + id);
-        return ref.put(blob, { contentType: contentType }).then(function(){
-          return ref.getDownloadURL();
-        }).then(function(url){
-          assetUrlCache[id] = url;
-          return { id: id, url: url, sizeBytes: sizeBytes, contentType: contentType };
+        return resizeImageForFirestore(blob).then(function(dataUrl){
+          var sizeBytes = dataUrl.length;
+          return Promise.all([
+            db.collection("assets").doc(id).set({ sizeBytes: sizeBytes, contentType: "image/jpeg" }),
+            db.collection("assetBlobs").doc(id).set({ dataUrl: dataUrl })
+          ]).then(function(){
+            assetUrlCache[id] = dataUrl;
+            return { id: id, url: dataUrl, sizeBytes: sizeBytes, contentType: "image/jpeg" };
+          });
         });
       },
       list: function(){
-        return rootRef.child(FIREBASE_ASSET_PREFIX.slice(0, -1)).listAll().then(function(res){
-          return Promise.all(res.items.map(function(item){
-            return item.getMetadata().catch(function(){ return { size: 0, contentType: "" }; });
-          })).then(function(metas){
-            var bytes = metas.reduce(function(sum, m){ return sum + (m.size || 0); }, 0);
-            return {
-              assets: res.items.map(function(item, i){ return { id: item.name, sizeBytes: metas[i].size, contentType: metas[i].contentType }; }),
-              usage: { bytes: bytes, maxBytes: 5 * 1024 * 1024 * 1024 }
-            };
+        return db.collection("assets").get().then(function(qsnap){
+          var bytes = 0;
+          var assets = [];
+          qsnap.docs.forEach(function(d){
+            var data = d.data() || {};
+            bytes += data.sizeBytes || 0;
+            assets.push({ id: d.id, sizeBytes: data.sizeBytes, contentType: data.contentType });
           });
-        }).catch(function(){ return { assets: [], usage: { bytes: 0, maxBytes: 5 * 1024 * 1024 * 1024 } }; });
+          return { assets: assets, usage: { bytes: bytes, maxBytes: 1 * 1024 * 1024 * 1024 } }; // Firestore無料枠の目安（1GiB）
+        }).catch(function(){ return { assets: [], usage: { bytes: 0, maxBytes: 1 * 1024 * 1024 * 1024 } }; });
       },
       delete: function(id){
         delete assetUrlCache[id];
-        return rootRef.child(FIREBASE_ASSET_PREFIX + id).delete();
+        return Promise.all([
+          db.collection("assets").doc(id).delete(),
+          db.collection("assetBlobs").doc(id).delete()
+        ]);
       }
     };
   }
 
   function preloadFirebaseAssetUrls(app){
-    var rootRef = app.storage().ref();
+    var db = app.firestore();
     var ids = collectReferencedAssetIds().filter(function(id){ return !assetUrlCache[id]; });
     if(!ids.length) return Promise.resolve();
     return Promise.all(ids.map(function(id){
-      return rootRef.child(FIREBASE_ASSET_PREFIX + id).getDownloadURL().then(function(url){
-        assetUrlCache[id] = url;
+      return db.collection("assetBlobs").doc(id).get().then(function(snap){
+        var data = snap.exists ? snap.data() : null;
+        if(data && data.dataUrl) assetUrlCache[id] = data.dataUrl;
       }).catch(function(){});
     }));
   }
