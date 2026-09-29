@@ -2837,10 +2837,9 @@
     });
   }
 
-  // 画像を粗いグリッド（明暗の分布）に縮小して比較する。ハッシュの一致/不一致で厳密に
-  // 白黒判定するのではなく、升目ごとの明るさの「近さ」を段階的にスコア化し、さらに
-  // 画像全体の明るさ（露出・天候差など）を差し引いてから比べることで、多少の照明や
-  // 立ち位置の違いでは大きく数値が動かない、ふんわりとした判定にする。
+  // 画像を粗いグリッド（明暗の分布）に縮小して比較する。升目ごとの明るさの「近さ」を
+  // 段階的にスコア化し、画像全体の明るさ（露出・天候差など）は差し引いて比べつつも、
+  // 構図やアングルのズレはスコアにしっかり反映される、やや厳しめの判定にする。
   function computeLumaGrid(imgEl, cols, rows){
     var canvas = document.createElement("canvas");
     canvas.width = cols; canvas.height = rows;
@@ -2859,14 +2858,14 @@
     var meanA = gridA.reduce(function(s,v){ return s+v; }, 0) / gridA.length;
     var meanB = gridB.reduce(function(s,v){ return s+v; }, 0) / gridB.length;
     var total = 0;
-    var tolerance = 150; // 大きいほど許容範囲が広く、ふんわりした判定になる
+    var tolerance = 80; // 小さいほど許容範囲が狭く、厳しい判定になる
     for(var i=0; i<gridA.length; i++){
       var diff = Math.abs((gridA[i]-meanA) - (gridB[i]-meanB));
       total += Math.max(0, 1 - diff/tolerance);
     }
     var raw = 100 * total / gridA.length;
-    // 全体的に甘め（高め）の数値になるよう緩やかに補正する
-    var soft = 100 - (100 - raw) * 0.65;
+    // 補正は控えめにし、ズレがそのままスコアへ反映されやすい（厳しめの）判定にする
+    var soft = 100 - (100 - raw) * 0.9;
     return Math.round(Math.max(0, Math.min(100, soft)));
   }
 
@@ -2878,7 +2877,7 @@
       var gridA = computeLumaGrid(imgs[0], 8, 6);
       var gridB = computeLumaGrid(imgs[1], 8, 6);
       var percent = gridSimilarityPercent(gridA, gridB);
-      var note = percent >= 65 ? "構図がよく似ています" : (percent >= 35 ? "構図がやや異なります" : "構図が大きく異なります");
+      var note = percent >= 75 ? "構図がよく似ています" : (percent >= 45 ? "構図がやや異なります" : "構図が大きく異なります");
       afterPhoto.angleCheck = { percent: percent, note: note };
       touch(); renderAll(); persistDb();
     }).catch(function(){
@@ -2953,8 +2952,8 @@
       return wrap;
     }
     if(ac && typeof ac.percent === "number"){
-      var tier = ac.percent >= 65 ? "high" : (ac.percent >= 35 ? "mid" : "low");
-      var icon = ac.percent >= 65 ? "✓" : (ac.percent >= 35 ? "△" : "✕");
+      var tier = ac.percent >= 75 ? "high" : (ac.percent >= 45 ? "mid" : "low");
+      var icon = ac.percent >= 75 ? "✓" : (ac.percent >= 45 ? "△" : "✕");
       var span = document.createElement("span");
       span.className = "angle-inline-status " + tier;
       span.textContent = icon + " 一致度 " + ac.percent + "%";
