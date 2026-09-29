@@ -1094,9 +1094,18 @@
     return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
   }
 
+  // 画像の実際のURLを解決する。Claudeのアプリ内ではアップロード済み画像は "/_blob/<id>" で
+  // 配信されるが、Claude外（ローカル保存モード）ではブラウザ内に保存したBlobから作った
+  // オブジェクトURLを返す。
+  function assetUrl(id){
+    if(!id) return "";
+    if(LOCAL_MODE) return localAssetUrlCache[id] || "";
+    return "/_blob/" + id;
+  }
+
   function photoSrc(photo){
     if(!photo) return "";
-    if(photo.assetId) return "/_blob/" + photo.assetId;
+    if(photo.assetId) return assetUrl(photo.assetId);
     if(photo.sampleSrc) return photo.sampleSrc;
     return "";
   }
@@ -1215,6 +1224,7 @@
 
   // ---------- capabilities & in-memory caches ----------
   var dbCap = null, assetsCap = null, mcpCap = null;
+  var LOCAL_MODE = false; // Claudeのアプリ外（Vercelなど単独ホスティング）で開いた場合にtrue
   var reportsCache = {};
   var masters = defaultMasters();
   var settings = { defaultCompany: "", defaultPhotographerLastName: "", defaultPhotographerFirstName: "" };
@@ -1822,7 +1832,7 @@
         preview.src = URL.createObjectURL(pendingFile);
         preview.hidden = false;
       } else if(item.assetId && !imageRemoved){
-        preview.src = "/_blob/" + item.assetId;
+        preview.src = assetUrl(item.assetId);
         preview.hidden = false;
       } else {
         preview.hidden = true;
@@ -1911,7 +1921,7 @@
       if(item.assetId){
         var img = document.createElement("img");
         img.className = "thumb";
-        img.src = "/_blob/" + item.assetId;
+        img.src = assetUrl(item.assetId);
         img.alt = "";
         row.appendChild(img);
       } else if(item.fields && item.fields.length){
@@ -2742,7 +2752,7 @@
     var kb = document.createElement("div");
     kb.className = "kokuban kokuban-image";
     var img = document.createElement("img");
-    img.src = "/_blob/" + master.assetId;
+    img.src = assetUrl(master.assetId);
     img.alt = master.name;
     kb.appendChild(img);
 
@@ -3257,6 +3267,135 @@
     });
   }
 
+  // ---------- ローカル保存モード（Claudeのアプリ外で開いた場合のフォールバック） ----------
+  // Vercelなど単独のURLで開かれると window.claude が存在せず db/assets のケーパビリティが
+  // 使えない。その場合はエラーで止めず、このブラウザのIndexedDBにデータと画像を保存して
+  // 動作を続ける（このブラウザ・この端末だけに保存され、他の端末とは共有されない）。
+  var localIdb = null;
+  var localAssetUrlCache = {};
+  var LOCAL_DB_NAME = "photoReportLocalDB";
+  var LOCAL_DB_VERSION = 1;
+
+  function openLocalDB(){
+    return new Promise(function(resolve, reject){
+      if(!window.indexedDB){ reject(new Error("no-indexeddb")); return; }
+      var req = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+      req.onupgradeneeded = function(){
+        var idb = req.result;
+        if(!idb.objectStoreNames.contains("reports")) idb.createObjectStore("reports", { keyPath: "id" });
+        if(!idb.objectStoreNames.contains("kv")) idb.createObjectStore("kv", { keyPath: "path" });
+        if(!idb.objectStoreNames.contains("assets")) idb.createObjectStore("assets", { keyPath: "id" });
+      };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error || new Error("indexeddb-open-failed")); };
+    });
+  }
+
+  function idbStore(name, mode){
+    return localIdb.transaction(name, mode).objectStore(name);
+  }
+
+  function idbReq(req){
+    return new Promise(function(resolve, reject){
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error || new Error("idb-request-failed")); };
+    });
+  }
+
+  function localUid(prefix){
+    return prefix + "_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  }
+
+  function preloadLocalAssetUrls(){
+    return idbReq(idbStore("assets", "readonly").getAll()).then(function(rows){
+      (rows || []).forEach(function(row){
+        try{ localAssetUrlCache[row.id] = URL.createObjectURL(row.blob); }catch(e){}
+      });
+    }).catch(function(){});
+  }
+
+  function createLocalDbCap(){
+    function collection(name){
+      return {
+        get: function(){
+          return idbReq(idbStore(name, "readonly").getAll()).then(function(rows){
+            return { docs: (rows || []).map(function(row){
+              var data = row.data;
+              return { id: row.id, data: function(){ return data; } };
+            }) };
+          });
+        },
+        add: function(obj){
+          var id = localUid(name === "reports" ? "r" : "d");
+          return idbReq(idbStore(name, "readwrite").add({ id: id, data: obj })).then(function(){
+            return { id: id };
+          });
+        },
+        doc: function(id){
+          return {
+            set: function(obj){ return idbReq(idbStore(name, "readwrite").put({ id: id, data: obj })); },
+            delete: function(){ return idbReq(idbStore(name, "readwrite").delete(id)); }
+          };
+        }
+      };
+    }
+    function doc(path){
+      return {
+        get: function(){
+          return idbReq(idbStore("kv", "readonly").get(path)).then(function(row){
+            return { exists: !!row, data: function(){ return row ? row.data : null; } };
+          });
+        },
+        set: function(obj){ return idbReq(idbStore("kv", "readwrite").put({ path: path, data: obj })); }
+      };
+    }
+    return { collection: collection, doc: doc };
+  }
+
+  function createLocalAssetsCap(){
+    return {
+      upload: function(blob){
+        var id = localUid("a");
+        var contentType = blob.type || "application/octet-stream";
+        var sizeBytes = blob.size || 0;
+        return idbReq(idbStore("assets", "readwrite").add({ id: id, blob: blob, contentType: contentType, sizeBytes: sizeBytes })).then(function(){
+          var url = "";
+          try{ url = URL.createObjectURL(blob); }catch(e){}
+          localAssetUrlCache[id] = url;
+          return { id: id, url: url, sizeBytes: sizeBytes, contentType: contentType };
+        });
+      },
+      list: function(){
+        return idbReq(idbStore("assets", "readonly").getAll()).then(function(rows){
+          var bytes = (rows || []).reduce(function(sum, r){ return sum + (r.sizeBytes || 0); }, 0);
+          return {
+            assets: (rows || []).map(function(r){ return { id: r.id, sizeBytes: r.sizeBytes, contentType: r.contentType }; }),
+            usage: { bytes: bytes, maxBytes: 500 * 1024 * 1024 }
+          };
+        });
+      },
+      delete: function(id){
+        delete localAssetUrlCache[id];
+        return idbReq(idbStore("assets", "readwrite").delete(id));
+      }
+    };
+  }
+
+  // window.claude（Claudeのケーパビリティ）が無い場合に、ローカル保存へ切り替える。
+  function prepareLocalFallback(caps){
+    if(caps && caps[0]) return Promise.resolve(caps); // Claude環境で db が使える場合はそのまま
+    LOCAL_MODE = true;
+    return openLocalDB().then(function(idb){
+      localIdb = idb;
+      return preloadLocalAssetUrls();
+    }).then(function(){
+      return [createLocalDbCap(), createLocalAssetsCap(), null];
+    }).catch(function(){
+      LOCAL_MODE = false;
+      return caps; // IndexedDBも使えない場合はあきらめて元の（null埋めの）状態を返す
+    });
+  }
+
   // ---------- load / refresh from the server ----------
   function reloadAll(seedIfEmpty){
     if(!dbCap) return Promise.resolve();
@@ -3329,6 +3468,8 @@
     : Promise.resolve([null, null, null]);
 
   capsPromise.then(function(caps){
+    return prepareLocalFallback(caps);
+  }).then(function(caps){
     dbCap = caps[0]; assetsCap = caps[1]; mcpCap = caps[2];
     if(mcpCap && elEmailPdfRow){
       elEmailPdfRow.hidden = false;
@@ -3338,10 +3479,17 @@
       }catch(e){}
     }
     if(!dbCap){
-      showBanner("この環境ではサーバー保存に対応していません。Claudeのアプリ内でこのページを開いてください。", "err");
+      showBanner("データを保存できる環境がありません。Claudeのアプリ内でこのページを開くか、対応ブラウザでお試しください。", "err");
       return;
     }
-    return reloadAll(true);
+    var loaded = reloadAll(true);
+    if(LOCAL_MODE){
+      loaded.then(function(){
+        showBanner("このブラウザ内にデータを保存しています（この端末・このブラウザだけで有効です）");
+        setTimeout(hideBanner, 4000);
+      });
+    }
+    return loaded;
   });
 })();
 </script>
