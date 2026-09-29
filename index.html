@@ -658,6 +658,7 @@
           <button type="button" class="master-subtab" data-master-tab="address">住所</button>
           <button type="button" class="master-subtab" data-master-tab="orderer">発注者</button>
           <button type="button" class="master-subtab" data-master-tab="company">会社名</button>
+          <button type="button" class="master-subtab" data-master-tab="email">メールアドレス</button>
           <button type="button" class="master-subtab" data-master-tab="blackboard">工事用黒板</button>
         </div>
       </div>
@@ -783,6 +784,26 @@
         </div>
       </div>
 
+      <div class="master-subpanel" id="masterPanelEmail" hidden>
+        <div class="master-panel-toolbar">
+          <p class="hint">PDFをメールで送る際の宛先候補として呼び出せます。行を上下に入れ替えて並び順を変更できます。</p>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterEmailBulkToggle">一括編集</button>
+        </div>
+        <div class="master-rowlist" id="masterEmailRowlist"></div>
+        <div class="master-bulk-wrap" id="masterEmailBulkWrap" hidden>
+          <textarea class="master-bulk-textarea" id="masterEmailBulkTextarea" spellcheck="false"></textarea>
+          <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
+          <div class="master-bulk-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="masterEmailBulkSave">この内容で保存</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="masterEmailBulkCancel">キャンセル</button>
+          </div>
+        </div>
+        <div class="master-add">
+          <input type="email" id="masterEmailInput" placeholder="メールアドレスを追加（例）example@sanoh-ltd.jp">
+          <button type="button" class="btn btn-ghost btn-sm" id="masterEmailAddBtn">追加</button>
+        </div>
+      </div>
+
       <div class="master-subpanel" id="masterPanelBlackboard" hidden>
         <div class="master-panel-toolbar">
           <p class="hint">使用する工事用黒板を登録します。実物の写真をアップロードするか、アプリ内で項目を指定してテンプレートを作成できます。行を上下に入れ替えて並び順を変更できます。</p>
@@ -841,6 +862,7 @@
 
   <datalist id="masterLocationSiteList"></datalist>
   <datalist id="masterLocationAddressList"></datalist>
+  <datalist id="masterEmailList"></datalist>
 
   <!-- ===== editor screen ===== -->
   <div id="viewEditor" hidden>
@@ -944,7 +966,7 @@
         <section class="card">
           <button class="btn btn-primary btn-block" id="exportBtn">PDFを書き出す</button>
           <div class="email-pdf-row" id="emailPdfRow" hidden>
-            <input type="email" id="emailPdfTo" placeholder="送り先メールアドレス">
+            <input type="email" id="emailPdfTo" placeholder="送り先メールアドレス" list="masterEmailList">
             <button type="button" class="btn btn-ghost btn-sm" id="emailPdfBtn">📧 メールで送る</button>
           </div>
           <div class="status-line" id="statusLine"></div>
@@ -989,7 +1011,7 @@
   function uid(prefix){ return (prefix||"r") + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
 
   function defaultMasters(){
-    return { categories: DEFAULT_CATEGORIES.slice(), photographers: [], siteNames: [], addresses: [], orderers: [], companies: [], blackboards: defaultBlackboards() };
+    return { categories: DEFAULT_CATEGORIES.slice(), photographers: [], siteNames: [], addresses: [], orderers: [], companies: [], emails: [], blackboards: defaultBlackboards() };
   }
   function uniqueStrings(arr){
     var seen = {}, out = [];
@@ -1010,6 +1032,9 @@
 
     var companies = Array.isArray(m.companies) ? m.companies : [];
     companies = companies.filter(function(v){ return typeof v === "string" && v.trim(); });
+
+    var emails = Array.isArray(m.emails) ? m.emails : [];
+    emails = uniqueStrings(emails.filter(function(v){ return typeof v === "string" && v.trim(); }).map(function(v){ return v.trim(); }));
 
     var blackboards = Array.isArray(m.blackboards) ? m.blackboards : defaultBlackboards();
     blackboards = blackboards.map(function(b){
@@ -1043,7 +1068,7 @@
     siteNames = uniqueStrings(siteNames);
     addresses = uniqueStrings(addresses);
 
-    return { categories: categories, photographers: photographers, siteNames: siteNames, addresses: addresses, orderers: orderers, companies: companies, blackboards: blackboards };
+    return { categories: categories, photographers: photographers, siteNames: siteNames, addresses: addresses, orderers: orderers, companies: companies, emails: emails, blackboards: blackboards };
   }
 
   function samplePhotoDataUri(label, hue){
@@ -1203,8 +1228,10 @@
       elMasterSiteNameInput = $("masterSiteNameInput"), elMasterSiteNameAddBtn = $("masterSiteNameAddBtn"),
       elMasterAddressInput = $("masterAddressInput"), elMasterAddressAddBtn = $("masterAddressAddBtn"),
       elMasterLocationSiteList = $("masterLocationSiteList"), elMasterLocationAddressList = $("masterLocationAddressList"),
+      elMasterEmailList = $("masterEmailList"),
       elMasterOrdererInput = $("masterOrdererInput"), elMasterOrdererAddBtn = $("masterOrdererAddBtn"),
       elMasterCompanyInput = $("masterCompanyInput"), elMasterCompanyAddBtn = $("masterCompanyAddBtn"),
+      elMasterEmailInput = $("masterEmailInput"), elMasterEmailAddBtn = $("masterEmailAddBtn"),
       elMasterBlackboardNameInput = $("masterBlackboardNameInput"), elMasterBlackboardFileInput = $("masterBlackboardFileInput"),
       elMasterBlackboardFileBtn = $("masterBlackboardFileBtn"), elMasterBlackboardFileName = $("masterBlackboardFileName"),
       elMasterBlackboardAddBtn = $("masterBlackboardAddBtn"), elMasterBlackboardRowlist = $("masterBlackboardRowlist"),
@@ -1214,6 +1241,7 @@
       elMasterPanelCategory = $("masterPanelCategory"), elMasterPanelPhotographer = $("masterPanelPhotographer"),
       elMasterPanelSiteName = $("masterPanelSiteName"), elMasterPanelAddress = $("masterPanelAddress"),
       elMasterPanelOrderer = $("masterPanelOrderer"), elMasterPanelCompany = $("masterPanelCompany"),
+      elMasterPanelEmail = $("masterPanelEmail"),
       elMasterPanelBlackboard = $("masterPanelBlackboard"),
       elTitle = $("meta-title"), elLocationName = $("meta-location-name"), elLocationAddress = $("meta-location-address"), elDate = $("meta-date"),
       elPhotographerSelect = $("meta-photographer"), elCompany = $("meta-company"),
@@ -1641,6 +1669,14 @@
       rowText: function(x){ return x; },
       lineText: function(x){ return x; },
       parseLine: function(line){ var v = line.trim(); return v ? v : null; }
+    },
+    {
+      key: "Email",
+      get: function(){ return masters.emails; },
+      set: function(v){ masters.emails = v; },
+      rowText: function(x){ return x; },
+      lineText: function(x){ return x; },
+      parseLine: function(line){ var v = line.trim(); return v ? v : null; }
     }
   ];
 
@@ -1671,7 +1707,7 @@
         var l = type.get();
         if(i === 0) return;
         var t = l[i-1]; l[i-1] = l[i]; l[i] = t;
-        scheduleSaveMasters(); renderAdmin();
+        scheduleSaveMasters(); renderAdmin(); refreshDatalists();
       });
       var down = document.createElement("button"); down.type = "button"; down.textContent = "↓"; down.title = "下へ";
       down.disabled = i === list.length - 1;
@@ -1679,12 +1715,12 @@
         var l = type.get();
         if(i === l.length-1) return;
         var t = l[i+1]; l[i+1] = l[i]; l[i] = t;
-        scheduleSaveMasters(); renderAdmin();
+        scheduleSaveMasters(); renderAdmin(); refreshDatalists();
       });
       var del = document.createElement("button"); del.type = "button"; del.className = "del"; del.textContent = "✕"; del.title = "削除";
       del.addEventListener("click", function(){
         type.get().splice(i,1);
-        scheduleSaveMasters(); renderAdmin();
+        scheduleSaveMasters(); renderAdmin(); refreshDatalists();
       });
       ops.appendChild(up); ops.appendChild(down); ops.appendChild(del);
       row.appendChild(ops);
@@ -1715,6 +1751,7 @@
     scheduleSaveMasters();
     closeMasterBulkEdit(type);
     renderAdmin();
+    refreshDatalists();
   }
 
   MASTER_TYPES.forEach(function(type){
@@ -1745,6 +1782,11 @@
     addMasterItem(masters.companies, elMasterCompanyInput, function(){ scheduleSaveMasters(); renderAdmin(); });
   });
   elMasterCompanyInput.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); elMasterCompanyAddBtn.click(); } });
+
+  elMasterEmailAddBtn.addEventListener("click", function(){
+    addMasterItem(masters.emails, elMasterEmailInput, function(){ scheduleSaveMasters(); renderAdmin(); refreshDatalists(); });
+  });
+  elMasterEmailInput.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); elMasterEmailAddBtn.click(); } });
 
   // ---------- 工事用黒板マスタ（名称＋画像）----------
   var pendingBlackboardFile = null;
@@ -2013,10 +2055,17 @@
       var opt = document.createElement("option"); opt.value = v;
       elMasterLocationAddressList.appendChild(opt);
     });
+    if(elMasterEmailList){
+      elMasterEmailList.innerHTML = "";
+      masters.emails.forEach(function(v){
+        var opt = document.createElement("option"); opt.value = v;
+        elMasterEmailList.appendChild(opt);
+      });
+    }
   }
 
   // ---------- master data sub-tabs ----------
-  var masterPanels = { category: elMasterPanelCategory, photographer: elMasterPanelPhotographer, siteName: elMasterPanelSiteName, address: elMasterPanelAddress, orderer: elMasterPanelOrderer, company: elMasterPanelCompany, blackboard: elMasterPanelBlackboard };
+  var masterPanels = { category: elMasterPanelCategory, photographer: elMasterPanelPhotographer, siteName: elMasterPanelSiteName, address: elMasterPanelAddress, orderer: elMasterPanelOrderer, company: elMasterPanelCompany, email: elMasterPanelEmail, blackboard: elMasterPanelBlackboard };
   function switchMasterTab(key){
     Object.keys(masterPanels).forEach(function(k){ masterPanels[k].hidden = k !== key; });
     Array.prototype.forEach.call(elMasterSubtabs.querySelectorAll(".master-subtab"), function(btn){
