@@ -22,28 +22,7 @@
     --shadow: 0 1px 2px rgba(20,22,30,.05), 0 12px 28px -14px rgba(20,22,30,.14);
     color-scheme: light;
   }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --paper:#131417;
-      --surface:#1C1E23;
-      --surface-2:#22252B;
-      --ink:#F1F2F5;
-      --ink-soft:#A7ACB8;
-      --ink-faint:#767C89;
-      --line:#33363D;
-      --line-strong:#42454E;
-      --navy:#7FA0FF;
-      --navy-soft:#232B42;
-      --rust:#F1875A;
-      --rust-soft:#3A2A20;
-      --ok:#5FCE8F;
-      --ok-soft:#1E2E24;
-      --danger:#F17A85;
-      --danger-soft:#3A2126;
-      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 24px -12px rgba(0,0,0,.5);
-      color-scheme: dark;
-    }
-  }
+  /* ダークモード自動切替は行わず、常に上記の白ベース配色を使用する */
   :root[data-theme="dark"]{
     --paper:#131417;
     --surface:#1C1E23;
