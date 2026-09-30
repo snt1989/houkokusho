@@ -123,6 +123,12 @@
   }
   .access-gate p.desc{ font-size:12.5px; color:var(--ink-soft); margin-bottom:16px; }
   .access-gate .err-text{ font-size:12px; color:var(--danger); min-height:1.4em; margin-top:4px; }
+  .access-gate .gate-sub{ font-size:11px; color:var(--ink-faint); margin:14px 0 6px; }
+  .access-gate .gate-actions{ display:flex; gap:8px; margin-top:8px; }
+  .creator-chip{
+    font-size:12px; color:var(--ink); background:var(--navy-soft); border:1px solid var(--line);
+    border-radius:999px; padding:4px 10px; white-space:nowrap;
+  }
 
   /* ===== management (list) screen ===== */
   .list-toolbar{display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap;}
@@ -616,6 +622,8 @@
     <div class="topbar-actions">
       <button class="btn btn-ghost btn-sm" id="backToListBtn" hidden>← 一覧へ戻る</button>
       <span class="stat" id="topStat"></span>
+      <span class="creator-chip" id="creatorChip" hidden></span>
+      <button class="btn btn-ghost btn-sm" id="switchCreatorBtn" hidden>作成者を切替</button>
       <button class="btn btn-ghost btn-sm" id="refreshBtn" title="サーバーから最新データを取得">⟳ 更新</button>
       <button class="btn btn-primary btn-sm" id="newReportBtn">＋ 新規作成</button>
     </div>
@@ -837,7 +845,7 @@
             <option value="">未選択</option>
           </select>
         </div>
-        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名と撮影者に自動で入力されます。撮影者は「マスタ管理」で登録した中から選べます。</p>
+        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名と撮影者に自動で入力されます。撮影者は「マスタ管理」で登録した中から選べます。作成者としてログインしている場合は、ログインした作成者が優先されます。</p>
       </section>
 
       <section class="card">
@@ -1241,6 +1249,15 @@
   var reportsCache = {};
   var masters = defaultMasters();
   var settings = { defaultCompany: "", defaultPhotographerLastName: "", defaultPhotographerFirstName: "" };
+  // ログイン中の作成者（撮影者マスタの1人）。この端末のブラウザに記憶する。
+  var CREATOR_STORAGE_KEY = "photoReportCreator";
+  var currentCreator = null; // { last, first } | null
+  try{
+    var savedCreator = JSON.parse(localStorage.getItem(CREATOR_STORAGE_KEY) || "null");
+    if(savedCreator && (savedCreator.last || savedCreator.first)){
+      currentCreator = { last: String(savedCreator.last || ""), first: String(savedCreator.first || "") };
+    }
+  }catch(e){}
   var report = null;          // currently open report (editor)
   var currentView = "list";   // "list" | "editor" | "admin"
 
@@ -1411,8 +1428,14 @@
   function blankReportWithDefaults(){
     var r = blankReport();
     r.meta.company = settings.defaultCompany || "";
-    r.meta.photographerLastName = settings.defaultPhotographerLastName || "";
-    r.meta.photographerFirstName = settings.defaultPhotographerFirstName || "";
+    // ログイン中の作成者を優先し、いなければ管理画面の既定の撮影者を使う
+    if(currentCreator){
+      r.meta.photographerLastName = currentCreator.last || "";
+      r.meta.photographerFirstName = currentCreator.first || "";
+    } else {
+      r.meta.photographerLastName = settings.defaultPhotographerLastName || "";
+      r.meta.photographerFirstName = settings.defaultPhotographerFirstName || "";
+    }
     return r;
   }
 
@@ -3631,6 +3654,122 @@
     input.focus();
   }
 
+  // ---------- 作成者ログイン（撮影者マスタから選ぶ） ----------
+  // 合い言葉の後（Claudeアプリ内では起動後）に、報告書を作る「作成者」を選ぶ。
+  // 選んだ作成者はこのブラウザに記憶され、新規作成した報告書の撮影者欄に自動で入る。
+  var elCreatorChip = $("creatorChip"), elSwitchCreatorBtn = $("switchCreatorBtn");
+
+  function creatorInMasters(c){
+    return !!c && masters.photographers.some(function(p){ return p.last === c.last && p.first === c.first; });
+  }
+
+  function updateCreatorUi(){
+    if(currentCreator){
+      elCreatorChip.textContent = "作成者：" + joinName(currentCreator.last, currentCreator.first);
+      elCreatorChip.hidden = false;
+    } else {
+      elCreatorChip.hidden = true;
+    }
+    elSwitchCreatorBtn.hidden = false;
+    elSwitchCreatorBtn.textContent = currentCreator ? "作成者を切替" : "作成者でログイン";
+  }
+
+  function setCurrentCreator(c){
+    currentCreator = c ? { last: c.last || "", first: c.first || "" } : null;
+    try{
+      if(currentCreator) localStorage.setItem(CREATOR_STORAGE_KEY, JSON.stringify(currentCreator));
+      else localStorage.removeItem(CREATOR_STORAGE_KEY);
+    }catch(e){}
+    updateCreatorUi();
+  }
+
+  function showCreatorLogin(allowCancel){
+    if(document.getElementById("creatorGate")) return;
+    var overlay = document.createElement("div");
+    overlay.className = "access-gate";
+    overlay.id = "creatorGate";
+    overlay.innerHTML =
+      '<div class="card">' +
+        '<h1>作成者でログイン</h1>' +
+        '<p class="desc">報告書を作成する方を選んでください。新規作成した報告書の撮影者欄に自動で入ります。</p>' +
+        '<div class="field" id="creatorPickField">' +
+          '<label for="creatorSelect">作成者</label>' +
+          '<select id="creatorSelect"></select>' +
+        '</div>' +
+        '<div class="gate-sub">一覧にない場合は新しく登録できます</div>' +
+        '<div class="field-row">' +
+          '<div class="field"><input type="text" id="creatorNewLast" placeholder="姓（例）山田" autocomplete="off"></div>' +
+          '<div class="field"><input type="text" id="creatorNewFirst" placeholder="名（例）太郎" autocomplete="off"></div>' +
+        '</div>' +
+        '<div class="err-text" id="creatorErr"></div>' +
+        '<div class="gate-actions">' +
+          '<button type="button" class="btn btn-primary" style="flex:1" id="creatorOkBtn">ログイン</button>' +
+          (allowCancel ? '<button type="button" class="btn btn-ghost" id="creatorCancelBtn">キャンセル</button>' : '') +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    var sel = overlay.querySelector("#creatorSelect");
+    var newLast = overlay.querySelector("#creatorNewLast");
+    var newFirst = overlay.querySelector("#creatorNewFirst");
+    var err = overlay.querySelector("#creatorErr");
+
+    var ph = document.createElement("option");
+    ph.value = ""; ph.textContent = masters.photographers.length ? "選択してください" : "（未登録）";
+    sel.appendChild(ph);
+    var preIdx = "";
+    masters.photographers.forEach(function(p, i){
+      var opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = joinName(p.last, p.first);
+      sel.appendChild(opt);
+      if(currentCreator && p.last === currentCreator.last && p.first === currentCreator.first) preIdx = String(i);
+    });
+    sel.value = preIdx;
+
+    function finish(c){
+      setCurrentCreator(c);
+      overlay.remove();
+      if(currentView === "admin") renderAdmin();
+    }
+
+    function submit(){
+      var last = newLast.value.trim(), first = newFirst.value.trim();
+      if(last || first){
+        var idx = masters.photographers.findIndex(function(p){ return p.last === last && p.first === first; });
+        if(idx < 0){
+          masters.photographers.push({ last: last, first: first });
+          scheduleSaveMasters();
+          refreshDatalists();
+        }
+        finish({ last: last, first: first });
+        return;
+      }
+      if(sel.value === ""){ err.textContent = "作成者を選ぶか、新しく登録してください"; return; }
+      var p = masters.photographers[parseInt(sel.value, 10)];
+      finish({ last: p.last, first: p.first });
+    }
+
+    overlay.querySelector("#creatorOkBtn").addEventListener("click", submit);
+    [newLast, newFirst].forEach(function(el){ el.addEventListener("keydown", function(e){ if(e.key === "Enter") submit(); }); });
+    sel.addEventListener("change", function(){ err.textContent = ""; });
+    var cancel = overlay.querySelector("#creatorCancelBtn");
+    if(cancel) cancel.addEventListener("click", function(){ overlay.remove(); });
+  }
+
+  // マスタ読み込み後に呼ぶ。記憶済みの作成者がマスタに残っていればそのままログイン、無ければ選択画面を出す。
+  function ensureCreatorLogin(){
+    if(currentCreator && (creatorInMasters(currentCreator) || !masters.photographers.length)){
+      updateCreatorUi();
+      return;
+    }
+    if(currentCreator && !creatorInMasters(currentCreator)) setCurrentCreator(null);
+    updateCreatorUi();
+    showCreatorLogin(false);
+  }
+
+  elSwitchCreatorBtn.addEventListener("click", function(){ showCreatorLogin(!!currentCreator); });
+
   // ---------- load / refresh from the server ----------
   function reloadAll(seedIfEmpty){
     if(!dbCap) return Promise.resolve();
@@ -3714,7 +3853,7 @@
         showBanner("データを保存できる環境がありません。Claudeのアプリ内でこのページを開くか、対応ブラウザでお試しください。", "err");
         return;
       }
-      var loaded = reloadAll(true);
+      var loaded = reloadAll(true).then(ensureCreatorLogin);
       if(CLOUD_MODE){
         loaded.then(function(){
           showBanner("Firebase（Googleサーバー）にデータを保存しています");
