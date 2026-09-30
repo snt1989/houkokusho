@@ -846,7 +846,18 @@
             <option value="">未選択</option>
           </select>
         </div>
-        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名と作成者に自動で入力されます。作成者は「マスタ管理」で登録した中から選べます。ログイン中の作成者がいる場合は、そちらが優先されます。</p>
+        <div class="field">
+          <label for="admin-default-layout">既定のレイアウト</label>
+          <select id="admin-default-layout">
+            <option value="4">4枚（2×2・標準）</option>
+            <option value="3">3枚（3段）</option>
+            <option value="2">2枚（大判・2段）</option>
+            <option value="1">1枚（全面）</option>
+            <option value="v1">縦1枚（A4縦）</option>
+            <option value="h1">横1枚（A4横）</option>
+          </select>
+        </div>
+        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名・作成者・レイアウトに自動で入力されます。作成者は「マスタ管理」で登録した中から選べます。ログイン中の作成者がいる場合は、そちらが優先されます。</p>
       </section>
 
       <section class="card">
@@ -1256,7 +1267,7 @@
   var CLOUD_MODE = false; // Claudeのアプリ外で、Firebase経由のサーバー保存が有効なときtrue（全員で共有）
   var reportsCache = {};
   var masters = defaultMasters();
-  var settings = { defaultCompany: "", defaultPhotographerLastName: "", defaultPhotographerFirstName: "" };
+  var settings = { defaultCompany: "", defaultPhotographerLastName: "", defaultPhotographerFirstName: "", defaultLayout: "4" };
   // ログイン中の作成者（作成者マスタの1人）。この端末のブラウザに記憶する。
   var CREATOR_STORAGE_KEY = "photoReportCreator";
   var currentCreator = null; // { last, first } | null
@@ -1279,6 +1290,7 @@
       elGlobalBanner = $("globalBanner"), elGlobalBannerText = $("globalBannerText"), elGlobalBannerClose = $("globalBannerClose"),
       elAdminCompany = $("admin-default-company"),
       elAdminPhotographerSelect = $("admin-default-photographer"),
+      elAdminLayout = $("admin-default-layout"),
       elAdminStats = $("adminStats"), elWipeAllBtn = $("wipeAllBtn"),
       elMasterCategoryInput = $("masterCategoryInput"), elMasterCategoryAddBtn = $("masterCategoryAddBtn"),
       elMasterPhotographerLastInput = $("masterPhotographerLastInput"), elMasterPhotographerFirstInput = $("masterPhotographerFirstInput"), elMasterPhotographerAddBtn = $("masterPhotographerAddBtn"),
@@ -1436,6 +1448,9 @@
   function blankReportWithDefaults(){
     var r = blankReport();
     r.meta.company = settings.defaultCompany || "";
+    var dl = settings.defaultLayout;
+    if(dl === "v1" || dl === "h1"){ r.layout = dl; r.perPage = 1; }
+    else if(["1","2","3","4"].indexOf(dl) !== -1){ r.layout = ""; r.perPage = parseInt(dl, 10); }
     // ログイン中の作成者を優先し、いなければ管理画面の既定の作成者を使う
     if(currentCreator){
       r.meta.photographerLastName = currentCreator.last || "";
@@ -1631,6 +1646,10 @@
   }
 
   // ---------- admin (settings / data) screen ----------
+  elAdminLayout.addEventListener("change", function(){
+    settings.defaultLayout = elAdminLayout.value;
+    scheduleSaveSettings();
+  });
   elAdminCompany.addEventListener("change", function(){
     settings.defaultCompany = elAdminCompany.value;
     scheduleSaveSettings();
@@ -2144,6 +2163,7 @@
 
   function renderAdmin(){
     populateSimpleSelect(elAdminCompany, masters.companies, settings.defaultCompany || "");
+    elAdminLayout.value = settings.defaultLayout || "4";
     populatePhotographerSelect(elAdminPhotographerSelect, settings.defaultPhotographerLastName, settings.defaultPhotographerFirstName);
 
     MASTER_TYPES.forEach(renderMasterRowList);
@@ -3812,6 +3832,7 @@
       var sdata = sSnap.exists ? sSnap.data() : {};
       settings = {
         defaultCompany: typeof sdata.defaultCompany === "string" ? sdata.defaultCompany : "",
+        defaultLayout: (["1","2","3","4","v1","h1"].indexOf(sdata.defaultLayout) !== -1) ? sdata.defaultLayout : "4",
         defaultPhotographerLastName: typeof sdata.defaultPhotographerLastName === "string" ? sdata.defaultPhotographerLastName : "",
         defaultPhotographerFirstName: typeof sdata.defaultPhotographerFirstName === "string" ? sdata.defaultPhotographerFirstName : ""
       };
