@@ -655,7 +655,7 @@
         <h2><span class="n">01</span>マスタ管理</h2>
         <div class="master-subtabs" id="masterSubtabs">
           <button type="button" class="master-subtab active" data-master-tab="category">写真の分類</button>
-          <button type="button" class="master-subtab" data-master-tab="photographer">撮影者</button>
+          <button type="button" class="master-subtab" data-master-tab="photographer">作成者</button>
           <button type="button" class="master-subtab" data-master-tab="siteName">現場名</button>
           <button type="button" class="master-subtab" data-master-tab="address">住所</button>
           <button type="button" class="master-subtab" data-master-tab="orderer">発注者</button>
@@ -687,7 +687,7 @@
 
       <div class="master-subpanel" id="masterPanelPhotographer" hidden>
         <div class="master-panel-toolbar">
-          <p class="hint">報告書の「撮影者」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
+          <p class="hint">報告書の「作成者」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
           <button type="button" class="btn btn-ghost btn-sm" id="masterPhotographerBulkToggle">一括編集</button>
         </div>
         <div class="master-rowlist" id="masterPhotographerRowlist"></div>
@@ -840,12 +840,12 @@
           </select>
         </div>
         <div class="field">
-          <label for="admin-default-photographer">既定の撮影者</label>
+          <label for="admin-default-photographer">既定の作成者</label>
           <select id="admin-default-photographer">
             <option value="">未選択</option>
           </select>
         </div>
-        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名と撮影者に自動で入力されます。撮影者は「マスタ管理」で登録した中から選べます。作成者としてログインしている場合は、ログインした作成者が優先されます。</p>
+        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名と作成者に自動で入力されます。作成者は「マスタ管理」で登録した中から選べます。ログイン中の作成者がいる場合は、そちらが優先されます。</p>
       </section>
 
       <section class="card">
@@ -898,11 +898,11 @@
             <input id="meta-date" type="date">
           </div>
           <div class="field">
-            <label for="meta-photographer">撮影者</label>
+            <label for="meta-photographer">作成者</label>
             <select id="meta-photographer">
               <option value="">未選択</option>
             </select>
-            <button type="button" class="link-btn" id="photographerQuickAddToggle">＋ 新しい撮影者を登録</button>
+            <button type="button" class="link-btn" id="photographerQuickAddToggle">＋ 新しい作成者を登録</button>
             <div class="quick-add-row" id="photographerQuickAddRow" hidden>
               <input type="text" id="photographerQuickAddLast" placeholder="姓（例）山田">
               <input type="text" id="photographerQuickAddFirst" placeholder="名（例）太郎">
@@ -1249,7 +1249,7 @@
   var reportsCache = {};
   var masters = defaultMasters();
   var settings = { defaultCompany: "", defaultPhotographerLastName: "", defaultPhotographerFirstName: "" };
-  // ログイン中の作成者（撮影者マスタの1人）。この端末のブラウザに記憶する。
+  // ログイン中の作成者（作成者マスタの1人）。この端末のブラウザに記憶する。
   var CREATOR_STORAGE_KEY = "photoReportCreator";
   var currentCreator = null; // { last, first } | null
   try{
@@ -1428,7 +1428,7 @@
   function blankReportWithDefaults(){
     var r = blankReport();
     r.meta.company = settings.defaultCompany || "";
-    // ログイン中の作成者を優先し、いなければ管理画面の既定の撮影者を使う
+    // ログイン中の作成者を優先し、いなければ管理画面の既定の作成者を使う
     if(currentCreator){
       r.meta.photographerLastName = currentCreator.last || "";
       r.meta.photographerFirstName = currentCreator.first || "";
@@ -1635,7 +1635,7 @@
     scheduleSaveSettings();
   });
 
-  // 登録済みの撮影者一覧から選ぶ<select>を組み立てる（編集画面・管理画面の既定値で共用）
+  // 登録済みの作成者一覧から選ぶ<select>を組み立てる（編集画面・管理画面の既定値で共用）
   function populatePhotographerSelect(selectEl, curLast, curFirst){
     var prevValue = selectEl.value;
     selectEl.innerHTML = "";
@@ -2256,7 +2256,7 @@
     persistDb();
   });
 
-  // ---------- 撮影者の新規登録（報告書編集画面から直接マスタへ追加） ----------
+  // ---------- 作成者の新規登録（報告書編集画面から直接マスタへ追加） ----------
   function hidePhotographerQuickAdd(){
     elPhotographerQuickAddRow.hidden = true;
     elPhotographerQuickAddToggle.hidden = false;
@@ -2732,7 +2732,7 @@
       ["発注者", report.meta.title],
       ["住所", report.meta.address],
       ["日付", report.meta.date],
-      ["撮影者", joinName(report.meta.photographerLastName, report.meta.photographerFirstName)]
+      ["作成者", joinName(report.meta.photographerLastName, report.meta.photographerFirstName)]
     ];
     rows.forEach(function(r){
       if(!r[1]) return;
@@ -3654,9 +3654,9 @@
     input.focus();
   }
 
-  // ---------- 作成者ログイン（撮影者マスタから選ぶ） ----------
+  // ---------- 作成者ログイン（作成者マスタから選ぶ） ----------
   // 合い言葉の後（Claudeアプリ内では起動後）に、報告書を作る「作成者」を選ぶ。
-  // 選んだ作成者はこのブラウザに記憶され、新規作成した報告書の撮影者欄に自動で入る。
+  // 選んだ作成者はこのブラウザに記憶され、新規作成した報告書の作成者欄に自動で入る。
   var elCreatorChip = $("creatorChip"), elSwitchCreatorBtn = $("switchCreatorBtn");
 
   function creatorInMasters(c){
@@ -3691,7 +3691,7 @@
     overlay.innerHTML =
       '<div class="card">' +
         '<h1>作成者でログイン</h1>' +
-        '<p class="desc">報告書を作成する方を選んでください。新規作成した報告書の撮影者欄に自動で入ります。</p>' +
+        '<p class="desc">報告書を作成する方を選んでください。新規作成した報告書の作成者欄に自動で入ります。</p>' +
         '<div class="field" id="creatorPickField">' +
           '<label for="creatorSelect">作成者</label>' +
           '<select id="creatorSelect"></select>' +
