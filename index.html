@@ -409,6 +409,17 @@
   .angle-pair-thumbs img{width:52px; height:52px; object-fit:cover; border-radius:6px; border:1px solid var(--line); flex:none;}
   .angle-pair-arrow{color:var(--ink-faint); font-size:14px; flex:none;}
   .angle-pair-idx{font-size:10.5px; color:var(--ink-faint); font-variant-numeric:tabular-nums;}
+  .angle-pair-pick{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .angle-pair-pick select{
+    flex:1 1 90px; min-width:0; font:inherit; font-size:11.5px; padding:4px 6px; border-radius:6px;
+    border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  }
+  .angle-pair-pick .angle-pair-remove{
+    flex:none; font:inherit; font-size:12px; line-height:1; padding:4px 8px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink-soft);
+  }
+  .angle-pair-pick .angle-pair-remove:hover{color:var(--danger);}
+  .angle-pairs-tools{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;}
 
   .photolist{display:flex; flex-direction:column; gap:8px; margin-top:12px; max-height:420px; overflow-y:auto; padding-right:2px;}
   .photo-row{
@@ -1015,17 +1026,18 @@
             <summary>🧭 アングル確認の使い方</summary>
             <ol>
               <li>写真を<b>2枚以上</b>追加すると、自動で2枚ずつ比べて、構図の一致度（%）が表示されます。写真の「分類」の設定は不要です。</li>
+              <li>比べる写真を変えたいときは、「アングル確認」の各行のプルダウンで写真を選びます。「＋ 組を追加」で組を増やし、「×」で消せます。「自動に戻す」で2枚ずつの自動に戻ります。</li>
               <li>結果は写真リストの上の「アングル確認」に出ます。<br>
                 ✓ 75%以上：よく似ている ／ △ 45〜74%：やや異なる ／ ✕ 44%以下：大きく異なる</li>
-              <li>写真を並べ替えたり削除したりして組み合わせが変わると、自動で判定し直します。「再判定」でいつでも判定し直せます。</li>
+              <li>組み合わせを変えると、その組を自動で判定します。「再判定」でいつでも判定し直せます。</li>
             </ol>
             <p class="angle-help-note"><b>組み合わせのルール</b><br>
-              ・写真の並び順で、1枚目と2枚目、3枚目と4枚目…のように2枚ずつ比べます（1ページに並ぶ枚数やレイアウトには関係しません）。<br>
-              ・写真が奇数枚のときは、最後の1枚は比べる相手がないため対象外です。</p>
+              ・初期状態は、写真の並び順で1枚目と2枚目、3枚目と4枚目…のように2枚ずつ比べます（レイアウトには関係しません）。写真が奇数枚のときの最後の1枚は対象外です。<br>
+              ・写真を選んだ後は、その組が固定されます（並べ替えても、選んだ写真同士で比べます）。</p>
             <p class="angle-help-note">写真は外部に送らず、端末の中だけで明暗のパターンを比べた目安です。厳密な判定ではないので、参考としてお使いください。</p>
           </details>
           <div class="angle-pairs-panel" id="anglePairsPanel" hidden>
-            <div class="angle-pairs-head">🧭 アングル確認（2枚ずつ自動判定）</div>
+            <div class="angle-pairs-head">🧭 アングル確認（比べる写真を選べます）</div>
             <div class="angle-pairs-list" id="anglePairsList"></div>
           </div>
           <div class="photolist" id="photoList"></div>
@@ -1232,6 +1244,8 @@
       meta: { title:"", siteName:"", address:"", date: todayStr, photographerLastName:"", photographerFirstName:"", company:"" },
       perPage: 4,
       layout: "",
+      anglePairs: null,   // null = 写真の並び順で自動（2枚ずつ） / 配列 = 選んだ組 [{a: 写真ID, b: 写真ID}]
+      angleChecks: {},    // 判定結果 { "写真ID|写真ID": { percent, note } }
       minPages: 0,
       photos: [],
       isSample: false,
@@ -1326,6 +1340,24 @@
     // layout: "" = 従来どおり（perPageで決まる） / "v1" = 縦1枚（A4縦） / "h1" = 横1枚（A4横）
     out.layout = (r.layout === "v1" || r.layout === "h1") ? r.layout : "";
     if(out.layout) out.perPage = 1;
+    // アングル確認：選んだ組と判定結果（存在しない写真を指すものは捨てる）
+    var photoIds = {};
+    out.photos.forEach(function(ph){ photoIds[ph.id] = true; });
+    out.anglePairs = null;
+    if(Array.isArray(r.anglePairs)){
+      out.anglePairs = r.anglePairs.filter(function(pr){
+        return pr && typeof pr.a === "string" && typeof pr.b === "string" && pr.a !== pr.b && photoIds[pr.a] && photoIds[pr.b];
+      }).map(function(pr){ return { a: pr.a, b: pr.b }; });
+    }
+    out.angleChecks = {};
+    if(r.angleChecks && typeof r.angleChecks === "object"){
+      Object.keys(r.angleChecks).forEach(function(k){
+        var v = r.angleChecks[k], ids = k.split("|");
+        if(v && typeof v.percent === "number" && isFinite(v.percent) && ids.length === 2 && photoIds[ids[0]] && photoIds[ids[1]]){
+          out.angleChecks[k] = { percent: Math.max(0, Math.min(100, Math.round(v.percent))), note: typeof v.note === "string" ? v.note : "" };
+        }
+      });
+    }
     out.minPages = (typeof r.minPages === "number" && r.minPages >= 0) ? Math.floor(r.minPages) : 0;
     out.isSample = !!r.isSample;
     out.createdAt = r.createdAt || Date.now();
@@ -2811,20 +2843,84 @@
   }
 
   // ---------- 作業前/作業後 アングル確認パネル（目立つ場所） ----------
+  var angleInFlight = {};   // 判定中の組（キー: "写真ID|写真ID"）
+
+  function anglePairKey(pair){ return pair.before.id + "|" + pair.after.id; }
+
+  function photoOptionLabel(photo, index){
+    var cap = (photo.caption || "").replace(/\s+/g, " ").trim();
+    if(cap.length > 10) cap = cap.slice(0, 10) + "…";
+    return String(index + 1).padStart(2, "0") + (cap ? " " + cap : "");
+  }
+
+  // 「自動」の組を、編集できる「選んだ組」の一覧に切り替える（現在の組をそのまま引き継ぐ）
+  function ensureManualPairs(){
+    if(Array.isArray(report.anglePairs)) return;
+    report.anglePairs = computeAnglePairs().map(function(pr){ return { a: pr.before.id, b: pr.after.id }; });
+  }
+
+  function saveAngleSelection(){
+    touch();
+    persistDb();
+    renderAnglePairsPanel();
+  }
+
   function renderAnglePairsPanel(){
     if(!elAnglePairsPanel) return;
     elAnglePairsList.innerHTML = "";
-    var pairs = computeAnglePairs();
-    if(!pairs.length){ elAnglePairsPanel.hidden = true; return; }
+    var withImages = report ? report.photos.filter(photoHasImage) : [];
+    if(!report || withImages.length < 2){ elAnglePairsPanel.hidden = true; return; }
     elAnglePairsPanel.hidden = false;
+    var pairs = computeAnglePairs();
+    var isManual = Array.isArray(report.anglePairs);
+
+    // 上部：組の追加 / 自動に戻す
+    var tools = document.createElement("div");
+    tools.className = "angle-pairs-tools";
+    var addBtn = document.createElement("button");
+    addBtn.type = "button"; addBtn.className = "angle-inline-btn"; addBtn.textContent = "＋ 組を追加";
+    addBtn.addEventListener("click", function(){
+      var list = report.photos.filter(photoHasImage);
+      ensureManualPairs();
+      var exists = function(x, y){ return report.anglePairs.some(function(pr){ return (pr.a === x && pr.b === y) || (pr.a === y && pr.b === x); }); };
+      for(var i = 0; i < list.length; i++){
+        for(var j = i + 1; j < list.length; j++){
+          if(!exists(list[i].id, list[j].id)){
+            report.anglePairs.push({ a: list[i].id, b: list[j].id });
+            saveAngleSelection();
+            return;
+          }
+        }
+      }
+      renderAnglePairsPanel();
+    });
+    tools.appendChild(addBtn);
+    if(isManual){
+      var autoBtn = document.createElement("button");
+      autoBtn.type = "button"; autoBtn.className = "angle-inline-btn"; autoBtn.textContent = "自動に戻す（2枚ずつ）";
+      autoBtn.addEventListener("click", function(){ report.anglePairs = null; saveAngleSelection(); });
+      tools.appendChild(autoBtn);
+    }
+    elAnglePairsList.appendChild(tools);
+
+    if(!pairs.length){
+      var none = document.createElement("div");
+      none.className = "angle-inline-note";
+      none.style.padding = "0 0 8px";
+      none.textContent = "比べる組がありません。「＋ 組を追加」で写真を選んでください。";
+      elAnglePairsList.appendChild(none);
+    }
+
     var toRun = [];
-    pairs.forEach(function(pair){
-      // 未判定、または組み合わせが変わって結果が古くなった組は、自動で判定する
-      var ac = pair.after.angleCheck;
-      if(!ac || (!ac.checking && ac.beforeId !== pair.before.id)){
-        pair.after.angleCheck = { checking: true, beforeId: pair.before.id };
+    pairs.forEach(function(pair, rowIndex){
+      var key = anglePairKey(pair);
+      // 未判定の組は自動で判定する
+      if(!report.angleChecks[key] && !angleInFlight[key]){
+        angleInFlight[key] = true;
         toRun.push(pair);
       }
+      var slot = (pair.manualIndex !== undefined) ? pair.manualIndex : rowIndex;
+
       var row = document.createElement("div");
       row.className = "angle-pair-row";
 
@@ -2833,21 +2929,56 @@
       var img1 = document.createElement("img");
       img1.src = photoSrc(pair.before); img1.alt = "";
       var arrow = document.createElement("span");
-      arrow.className = "angle-pair-arrow"; arrow.textContent = "→";
+      arrow.className = "angle-pair-arrow"; arrow.textContent = "⇄";
       var img2 = document.createElement("img");
       img2.src = photoSrc(pair.after); img2.alt = "";
       thumbs.appendChild(img1); thumbs.appendChild(arrow); thumbs.appendChild(img2);
       row.appendChild(thumbs);
 
-      var idxLabel = document.createElement("div");
-      idxLabel.className = "angle-pair-idx";
-      idxLabel.textContent = String(pair.beforeIndex+1).padStart(2,"0") + " → " + String(pair.afterIndex+1).padStart(2,"0") + " 枚目";
-      row.appendChild(idxLabel);
+      // 比べる写真の選択
+      var pick = document.createElement("div");
+      pick.className = "angle-pair-pick";
+      function makeSelect(currentId, which){
+        var sel = document.createElement("select");
+        sel.setAttribute("aria-label", which === "a" ? "1枚目の写真" : "2枚目の写真");
+        report.photos.forEach(function(ph, i){
+          if(!photoHasImage(ph)) return;
+          var opt = document.createElement("option");
+          opt.value = ph.id; opt.textContent = photoOptionLabel(ph, i);
+          sel.appendChild(opt);
+        });
+        sel.value = currentId;
+        sel.addEventListener("change", function(){
+          ensureManualPairs();
+          var cur = report.anglePairs[slot];
+          if(!cur) return;
+          var next = { a: cur.a, b: cur.b };
+          next[which] = sel.value;
+          if(next.a === next.b){ renderAnglePairsPanel(); return; } // 同じ写真同士は比べられない
+          report.anglePairs[slot] = next;
+          saveAngleSelection();
+        });
+        return sel;
+      }
+      pick.appendChild(makeSelect(pair.before.id, "a"));
+      var vs = document.createElement("span");
+      vs.className = "angle-pair-arrow"; vs.textContent = "と";
+      pick.appendChild(vs);
+      pick.appendChild(makeSelect(pair.after.id, "b"));
+      var rm = document.createElement("button");
+      rm.type = "button"; rm.className = "angle-pair-remove"; rm.textContent = "×"; rm.title = "この組を削除";
+      rm.addEventListener("click", function(){
+        ensureManualPairs();
+        report.anglePairs.splice(slot, 1);
+        saveAngleSelection();
+      });
+      pick.appendChild(rm);
+      row.appendChild(pick);
 
-      row.appendChild(buildAngleSidebarRow(pair.before, pair.after));
+      row.appendChild(buildAngleSidebarRow(pair));
       elAnglePairsList.appendChild(row);
     });
-    toRun.forEach(function(pair){ autoAngleCheck(pair.before, pair.after); });
+    toRun.forEach(function(pair){ autoAngleCheck(pair); });
   }
 
   // ---------- A4 preview pages ----------
@@ -3137,39 +3268,51 @@
       var gridB = computeLumaGrid(imgs[1], 8, 6);
       var percent = gridSimilarityPercent(gridA, gridB);
       var note = percent >= 75 ? "構図がよく似ています" : (percent >= 45 ? "構図がやや異なります" : "構図が大きく異なります");
-      return { percent: percent, note: note, beforeId: beforePhoto.id };
+      return { percent: percent, note: note };
     }, function(){
-      return { percent: 50, note: "画像を比較できなかったための概算値", beforeId: beforePhoto.id };
+      return { percent: 50, note: "画像を比較できなかったための概算値" };
+    });
+  }
+
+  // 組の判定を実行して結果を保存する（自動判定・再判定の共通処理）
+  function autoAngleCheck(pair){
+    var key = anglePairKey(pair);
+    var owner = report;
+    angleInFlight[key] = true;
+    return computeAngleResult(pair.before, pair.after).then(function(res){
+      delete angleInFlight[key];
+      if(!owner) return;
+      owner.angleChecks[key] = res;
+      if(report === owner){ persistDb(); renderAnglePairsPanel(); }
     });
   }
 
   // 「再判定」ボタン用
-  function runAngleCheck(beforePhoto, afterPhoto){
+  function runAngleCheck(pair){
     if(!report) return;
-    afterPhoto.angleCheck = { checking: true, beforeId: beforePhoto.id };
-    touch(); renderAll();
-    computeAngleResult(beforePhoto, afterPhoto).then(function(res){
-      afterPhoto.angleCheck = res;
-      touch(); renderAll(); persistDb();
-    });
+    delete report.angleChecks[anglePairKey(pair)];
+    angleInFlight[anglePairKey(pair)] = true;
+    renderAnglePairsPanel();
+    autoAngleCheck(pair);
   }
 
-  // 写真が2枚以上あるときの自動判定（ボタン操作なし）
-  function autoAngleCheck(beforePhoto, afterPhoto){
-    computeAngleResult(beforePhoto, afterPhoto).then(function(res){
-      var cur = afterPhoto.angleCheck;
-      if(!cur || cur.beforeId !== beforePhoto.id) return; // 判定中に組み合わせが変わった
-      afterPhoto.angleCheck = res;
-      persistDb();
-      renderAnglePairsPanel();
-    });
-  }
-
-  // 写真の並び順で2枚ずつ（1・2枚目、3・4枚目…）を組にする。分類やレイアウトには依存しない。
+  // 初期状態（自動）は、写真の並び順で2枚ずつ（1・2枚目、3・4枚目…）を組にする。
+  // 写真を選んだ後は、選んだ組（report.anglePairs）を使う。分類やレイアウトには依存しない。
   function computeAnglePairs(){
     var pairs = [];
     if(!report) return pairs;
     var list = report.photos;
+    if(Array.isArray(report.anglePairs)){
+      var byId = {};
+      list.forEach(function(ph, i){ byId[ph.id] = { photo: ph, index: i }; });
+      report.anglePairs.forEach(function(pr, k){
+        var A = byId[pr.a], B = byId[pr.b];
+        if(A && B && photoHasImage(A.photo) && photoHasImage(B.photo)){
+          pairs.push({ before: A.photo, beforeIndex: A.index, after: B.photo, afterIndex: B.index, manualIndex: k });
+        }
+      });
+      return pairs;
+    }
     for(var i = 0; i + 1 < list.length; i += 2){
       if(photoHasImage(list[i]) && photoHasImage(list[i+1])){
         pairs.push({ before: list[i], beforeIndex: i, after: list[i+1], afterIndex: i+1 });
@@ -3178,7 +3321,7 @@
     return pairs;
   }
 
-  function buildAngleSidebarRow(beforePhoto, afterPhoto){
+  function buildAngleSidebarRow(pair){
     var wrap = document.createElement("div");
     wrap.className = "angle-inline";
     var label = document.createElement("span");
@@ -3186,8 +3329,8 @@
     label.textContent = "判定：";
     wrap.appendChild(label);
 
-    var ac = afterPhoto.angleCheck;
-    if(ac && ac.checking){
+    var ac = report.angleChecks[anglePairKey(pair)];
+    if(!ac && angleInFlight[anglePairKey(pair)]){
       var busy = document.createElement("span");
       busy.className = "angle-inline-status busy";
       busy.textContent = "判定中…";
@@ -3209,12 +3352,12 @@
       }
       var retry = document.createElement("button");
       retry.type = "button"; retry.className = "angle-inline-btn"; retry.textContent = "再判定";
-      retry.addEventListener("click", function(){ runAngleCheck(beforePhoto, afterPhoto); });
+      retry.addEventListener("click", function(){ runAngleCheck(pair); });
       wrap.appendChild(retry);
     } else {
       var btn = document.createElement("button");
       btn.type = "button"; btn.className = "angle-inline-btn primary"; btn.textContent = "🧭 アングル判定";
-      btn.addEventListener("click", function(){ runAngleCheck(beforePhoto, afterPhoto); });
+      btn.addEventListener("click", function(){ runAngleCheck(pair); });
       wrap.appendChild(btn);
     }
     return wrap;
