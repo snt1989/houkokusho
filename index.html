@@ -213,6 +213,11 @@
   .master-panel-toolbar .hint{margin:0;}
 
   .master-empty{font-size:12px; color:var(--ink-faint); padding:10px 2px;}
+  .master-row .layout-name{
+    flex:1; min-width:0; font:inherit; font-size:13px; padding:5px 8px; border:1px solid var(--line-strong);
+    border-radius:6px; background:var(--surface); color:var(--ink);
+  }
+  .master-row .layout-on{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--ink-soft); flex:none; cursor:pointer;}
   .master-rowlist{display:flex; flex-direction:column; gap:6px; margin-bottom:12px;}
   .master-row{
     display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center;
@@ -618,6 +623,7 @@
     </div>
     <nav class="topbar-nav" id="topbarNav">
       <button class="nav-tab" id="navListBtn" type="button">報告書一覧</button>
+      <button class="nav-tab" id="navMasterBtn" type="button">マスタ管理</button>
       <button class="nav-tab" id="navAdminBtn" type="button">⚙ 管理画面</button>
     </nav>
     <div class="topbar-actions">
@@ -644,16 +650,12 @@
     <div class="report-grid" id="reportGrid"></div>
   </div>
 
-  <!-- ===== admin (settings / data) screen ===== -->
-  <div id="viewAdmin" hidden>
-    <div class="list-toolbar">
-      <h2>管理画面</h2>
-    </div>
-
+  <!-- ===== master (independent page) ===== -->
+  <div id="viewMaster" hidden>
     <!-- マスタ管理は独立した全幅ページ。タブごとに1ページずつ切り替える -->
     <section class="card master-page">
       <div class="master-page-head">
-        <h2><span class="n">01</span>マスタ管理</h2>
+        <h2>マスタ管理</h2>
         <div class="master-subtabs" id="masterSubtabs">
           <button type="button" class="master-subtab active" data-master-tab="category">写真の分類</button>
           <button type="button" class="master-subtab" data-master-tab="photographer">作成者</button>
@@ -663,6 +665,7 @@
           <button type="button" class="master-subtab" data-master-tab="company">会社名</button>
           <button type="button" class="master-subtab" data-master-tab="email">メールアドレス</button>
           <button type="button" class="master-subtab" data-master-tab="blackboard">工事用黒板</button>
+          <button type="button" class="master-subtab" data-master-tab="layout">レイアウト</button>
         </div>
       </div>
 
@@ -829,11 +832,25 @@
           <button type="button" class="btn btn-primary btn-sm" id="masterBlackboardTplAddBtn">テンプレートを作成</button>
         </div>
       </div>
+      <div class="master-subpanel" id="masterPanelLayout" hidden>
+        <div class="master-panel-toolbar">
+          <p class="hint">報告書の「レイアウト」と、管理画面の「既定のレイアウト」に出る選択肢です。表示名の変更、表示のON/OFF、並び順の変更ができます。</p>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterLayoutResetBtn">初期状態に戻す</button>
+        </div>
+        <div class="master-rowlist" id="masterLayoutRowlist"></div>
+      </div>
     </section>
+  </div>
+
+  <!-- ===== admin (settings / data) screen ===== -->
+  <div id="viewAdmin" hidden>
+    <div class="list-toolbar">
+      <h2>管理画面</h2>
+    </div>
 
     <div class="admin-grid">
       <section class="card">
-        <h2><span class="n">02</span>新規報告書の既定値</h2>
+        <h2><span class="n">01</span>新規報告書の既定値</h2>
         <div class="field">
           <label for="admin-default-company">既定の会社名</label>
           <select id="admin-default-company">
@@ -857,17 +874,17 @@
             <option value="h1">横1枚（A4横）</option>
           </select>
         </div>
-        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名・作成者・レイアウトに自動で入力されます。作成者は「マスタ管理」で登録した中から選べます。ログイン中の作成者がいる場合は、そちらが優先されます。</p>
+        <p class="hint">「＋ 新規作成」で報告書を作るとき、会社名・作成者・レイアウトに自動で入力されます。作成者・レイアウトは「マスタ管理」で登録した中から選べます。ログイン中の作成者がいる場合は、そちらが優先されます。</p>
       </section>
 
       <section class="card">
-        <h2><span class="n">03</span>データ概要</h2>
+        <h2><span class="n">02</span>データ概要</h2>
         <div class="admin-stats" id="adminStats"></div>
         <p class="hint">報告書と写真はサーバーに保存され、同じアカウントでサインインしていればどの端末からもアクセスできます。他の端末で行った変更は「⟳ 更新」で反映されます。</p>
       </section>
 
       <section class="card">
-        <h2><span class="n">04</span>データの削除</h2>
+        <h2><span class="n">03</span>データの削除</h2>
         <p class="hint" style="margin-top:0;">すべての報告書をサーバーから削除します。元に戻せません。</p>
         <button class="btn btn-danger-outline btn-block" id="wipeAllBtn">すべての報告書を削除</button>
       </section>
@@ -1053,8 +1070,30 @@
 
   function uid(prefix){ return (prefix||"r") + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
 
+  // レイアウトマスタ：選択肢の種類はコード側で固定。表示名・表示ON/OFF・並び順をマスタで管理する。
+  var LAYOUT_DEFS = [
+    { key: "1",  label: "1枚（全面）" },
+    { key: "v1", label: "縦1枚（A4縦）" },
+    { key: "h1", label: "横1枚（A4横）" },
+    { key: "2",  label: "2枚（大判・2段）" },
+    { key: "3",  label: "3枚（3段）" },
+    { key: "4",  label: "4枚（2×2・標準）" }
+  ];
+  function sanitizeLayouts(list){
+    var out = [], seen = {};
+    (Array.isArray(list) ? list : []).forEach(function(it){
+      if(!it || typeof it.key !== "string" || seen[it.key]) return;
+      var def = LAYOUT_DEFS.filter(function(d){ return d.key === it.key; })[0];
+      if(!def) return;
+      seen[it.key] = true;
+      out.push({ key: it.key, label: (typeof it.label === "string" && it.label.trim()) ? it.label.trim() : def.label, enabled: it.enabled !== false });
+    });
+    LAYOUT_DEFS.forEach(function(d){ if(!seen[d.key]) out.push({ key: d.key, label: d.label, enabled: true }); });
+    if(!out.some(function(e){ return e.enabled; })) out.forEach(function(e){ e.enabled = true; });
+    return out;
+  }
   function defaultMasters(){
-    return { categories: DEFAULT_CATEGORIES.slice(), photographers: [], siteNames: [], addresses: [], orderers: [], companies: [], emails: [], blackboards: defaultBlackboards() };
+    return { categories: DEFAULT_CATEGORIES.slice(), photographers: [], siteNames: [], addresses: [], orderers: [], companies: [], emails: [], blackboards: defaultBlackboards(), layouts: sanitizeLayouts([]) };
   }
   function uniqueStrings(arr){
     var seen = {}, out = [];
@@ -1111,7 +1150,7 @@
     siteNames = uniqueStrings(siteNames);
     addresses = uniqueStrings(addresses);
 
-    return { categories: categories, photographers: photographers, siteNames: siteNames, addresses: addresses, orderers: orderers, companies: companies, emails: emails, blackboards: blackboards };
+    return { categories: categories, photographers: photographers, siteNames: siteNames, addresses: addresses, orderers: orderers, companies: companies, emails: emails, blackboards: blackboards, layouts: sanitizeLayouts(m.layouts) };
   }
 
   function samplePhotoDataUri(label, hue){
@@ -1278,7 +1317,7 @@
     }
   }catch(e){}
   var report = null;          // currently open report (editor)
-  var currentView = "list";   // "list" | "editor" | "admin"
+  var currentView = "list";   // "list" | "editor" | "master" | "admin"
 
   // ---------- element refs ----------
   var $ = function(id){ return document.getElementById(id); };
@@ -1346,14 +1385,17 @@
   }
 
   // ---------- navigation ----------
+  var elViewMaster = $("viewMaster"), elNavMasterBtn = $("navMasterBtn");
   function switchView(){
-    var v = (currentView === "editor" && report) ? "editor" : (currentView === "admin" ? "admin" : "list");
+    var v = (currentView === "editor" && report) ? "editor" : (currentView === "admin" ? "admin" : (currentView === "master" ? "master" : "list"));
     elViewList.hidden = v !== "list";
     elViewEditor.hidden = v !== "editor";
+    elViewMaster.hidden = v !== "master";
     elViewAdmin.hidden = v !== "admin";
     elBackBtn.hidden = v !== "editor";
     elTopbarNav.hidden = v === "editor";
     elNavListBtn.classList.toggle("active", v === "list");
+    elNavMasterBtn.classList.toggle("active", v === "master");
     elNavAdminBtn.classList.toggle("active", v === "admin");
     elTopStat.textContent = v === "editor"
       ? "写真 " + report.photos.length + " 枚・" + Math.max(1, Math.ceil(report.photos.length / report.perPage)) + " ページ"
@@ -1371,10 +1413,12 @@
   }
   function goToList(){ currentView = "list"; renderReportList(); switchView(); }
   function goToAdmin(){ currentView = "admin"; renderAdmin(); switchView(); }
+  function goToMaster(){ currentView = "master"; renderAdmin(); switchView(); }
 
   elBackBtn.addEventListener("click", goToList);
   elNavListBtn.addEventListener("click", goToList);
   elNavAdminBtn.addEventListener("click", goToAdmin);
+  elNavMasterBtn.addEventListener("click", goToMaster);
 
   // ---------- per-document debounced save (reports) ----------
   var saveTimers = {}, saveInFlight = {}, saveDirty = {};
@@ -2148,7 +2192,7 @@
   }
 
   // ---------- master data sub-tabs ----------
-  var masterPanels = { category: elMasterPanelCategory, photographer: elMasterPanelPhotographer, siteName: elMasterPanelSiteName, address: elMasterPanelAddress, orderer: elMasterPanelOrderer, company: elMasterPanelCompany, email: elMasterPanelEmail, blackboard: elMasterPanelBlackboard };
+  var masterPanels = { category: elMasterPanelCategory, photographer: elMasterPanelPhotographer, siteName: elMasterPanelSiteName, address: elMasterPanelAddress, orderer: elMasterPanelOrderer, company: elMasterPanelCompany, email: elMasterPanelEmail, blackboard: elMasterPanelBlackboard, layout: $("masterPanelLayout") };
   function switchMasterTab(key){
     Object.keys(masterPanels).forEach(function(k){ masterPanels[k].hidden = k !== key; });
     Array.prototype.forEach.call(elMasterSubtabs.querySelectorAll(".master-subtab"), function(btn){
@@ -2161,12 +2205,79 @@
     switchMasterTab(btn.dataset.masterTab);
   });
 
+  // レイアウト選択肢を、マスタの設定（表示名・ON/OFF・並び順）から組み立てる。
+  // 非表示にしたレイアウトでも、いま選択中の値は残す（既存の報告書を壊さないため）。
+  function populateLayoutSelect(selectEl, current){
+    selectEl.innerHTML = "";
+    masters.layouts.forEach(function(l){
+      if(!l.enabled && l.key !== current) return;
+      var opt = document.createElement("option");
+      opt.value = l.key;
+      opt.textContent = l.label + (l.enabled ? "" : "（非表示）");
+      selectEl.appendChild(opt);
+    });
+    selectEl.value = current;
+  }
+
+  function renderLayoutMasterList(){
+    var rowlist = $("masterLayoutRowlist");
+    rowlist.innerHTML = "";
+    masters.layouts.forEach(function(l, i){
+      var row = document.createElement("div");
+      row.className = "master-row";
+
+      var on = document.createElement("label");
+      on.className = "layout-on";
+      var chk = document.createElement("input"); chk.type = "checkbox"; chk.checked = l.enabled;
+      on.appendChild(chk); on.appendChild(document.createTextNode("表示"));
+      chk.addEventListener("change", function(){
+        var enabledCount = masters.layouts.filter(function(x){ return x.enabled; }).length;
+        if(!chk.checked && enabledCount <= 1){ chk.checked = true; showBanner("表示するレイアウトを1つ以上残してください", "err"); setTimeout(hideBanner, 3000); return; }
+        l.enabled = chk.checked;
+        scheduleSaveMasters(); renderAdmin();
+      });
+
+      var name = document.createElement("input");
+      name.type = "text"; name.className = "layout-name"; name.value = l.label;
+      name.addEventListener("change", function(){
+        var def = LAYOUT_DEFS.filter(function(d){ return d.key === l.key; })[0];
+        l.label = name.value.trim() || (def ? def.label : l.label);
+        name.value = l.label;
+        scheduleSaveMasters();
+      });
+
+      var ops = document.createElement("div");
+      ops.className = "ops";
+      var up = document.createElement("button"); up.type = "button"; up.textContent = "↑"; up.title = "上へ";
+      up.disabled = i === 0;
+      up.addEventListener("click", function(){
+        var t = masters.layouts[i-1]; masters.layouts[i-1] = masters.layouts[i]; masters.layouts[i] = t;
+        scheduleSaveMasters(); renderAdmin();
+      });
+      var down = document.createElement("button"); down.type = "button"; down.textContent = "↓"; down.title = "下へ";
+      down.disabled = i === masters.layouts.length - 1;
+      down.addEventListener("click", function(){
+        var t = masters.layouts[i+1]; masters.layouts[i+1] = masters.layouts[i]; masters.layouts[i] = t;
+        scheduleSaveMasters(); renderAdmin();
+      });
+      ops.appendChild(up); ops.appendChild(down);
+
+      row.appendChild(on); row.appendChild(name); row.appendChild(ops);
+      rowlist.appendChild(row);
+    });
+  }
+  $("masterLayoutResetBtn").addEventListener("click", function(){
+    masters.layouts = sanitizeLayouts([]);
+    scheduleSaveMasters(); renderAdmin();
+  });
+
   function renderAdmin(){
     populateSimpleSelect(elAdminCompany, masters.companies, settings.defaultCompany || "");
-    elAdminLayout.value = settings.defaultLayout || "4";
+    populateLayoutSelect(elAdminLayout, settings.defaultLayout || "4");
     populatePhotographerSelect(elAdminPhotographerSelect, settings.defaultPhotographerLastName, settings.defaultPhotographerFirstName);
 
     MASTER_TYPES.forEach(renderMasterRowList);
+    renderLayoutMasterList();
     renderBlackboardList();
     refreshDatalists();
     renderAdminStats();
@@ -2235,7 +2346,7 @@
     elDate.value = report.meta.date || todayStr;
     populatePhotographerSelect(elPhotographerSelect, report.meta.photographerLastName, report.meta.photographerFirstName);
     populateSimpleSelect(elCompany, masters.companies, report.meta.company || "");
-    elPerPage.value = report.layout || String(report.perPage || 4);
+    populateLayoutSelect(elPerPage, report.layout || String(report.perPage || 4));
     hidePhotographerQuickAdd();
     hideOrdererQuickAdd();
   }
@@ -3776,7 +3887,7 @@
     function finish(c){
       setCurrentCreator(c);
       overlay.remove();
-      if(currentView === "admin") renderAdmin();
+      if(currentView === "admin" || currentView === "master") renderAdmin();
     }
 
     function submit(){
@@ -3864,7 +3975,7 @@
         currentView = "list";
       }
       renderReportList();
-      if(currentView === "admin") renderAdmin();
+      if(currentView === "admin" || currentView === "master") renderAdmin();
       if(currentView === "editor" && report) renderAll();
       switchView();
     });
