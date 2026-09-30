@@ -461,6 +461,7 @@
     padding:3% 3.4%; display:flex; flex-direction:column; gap:1.6%;
     position:relative;
   }
+  .a4-page.landscape{aspect-ratio:297/210;}
   .ph-header{
     display:flex; justify-content:space-between; align-items:flex-end; gap:12px;
     border-bottom:2px solid #1F3654; padding-bottom:1.2%;
@@ -924,6 +925,8 @@
             <label for="perpage">1ページあたりの写真枚数</label>
             <select id="perpage">
               <option value="1">1枚（全面）</option>
+              <option value="v1">縦1枚（A4縦）</option>
+              <option value="h1">横1枚（A4横）</option>
               <option value="2">2枚（大判・2段）</option>
               <option value="3">3枚（3段）</option>
               <option value="4" selected>4枚（2×2・標準）</option>
@@ -1138,6 +1141,7 @@
       id: null,
       meta: { title:"", siteName:"", address:"", date: todayStr, photographerLastName:"", photographerFirstName:"", company:"" },
       perPage: 4,
+      layout: "",
       minPages: 0,
       photos: [],
       isSample: false,
@@ -1228,6 +1232,9 @@
       ? Math.max(0.5, Math.min(2.5, r.blackboardScale))
       : (foundLegacyScale !== null ? foundLegacyScale : 1);
     out.perPage = [1,2,3,4].indexOf(r.perPage) === -1 ? 4 : r.perPage;
+    // layout: "" = 従来どおり（perPageで決まる） / "v1" = 縦1枚（A4縦） / "h1" = 横1枚（A4横）
+    out.layout = (r.layout === "v1" || r.layout === "h1") ? r.layout : "";
+    if(out.layout) out.perPage = 1;
     out.minPages = (typeof r.minPages === "number" && r.minPages >= 0) ? Math.floor(r.minPages) : 0;
     out.isSample = !!r.isSample;
     out.createdAt = r.createdAt || Date.now();
@@ -2208,7 +2215,7 @@
     elDate.value = report.meta.date || todayStr;
     populatePhotographerSelect(elPhotographerSelect, report.meta.photographerLastName, report.meta.photographerFirstName);
     populateSimpleSelect(elCompany, masters.companies, report.meta.company || "");
-    elPerPage.value = String(report.perPage || 4);
+    elPerPage.value = report.layout || String(report.perPage || 4);
     hidePhotographerQuickAdd();
     hideOrdererQuickAdd();
   }
@@ -2328,7 +2335,9 @@
 
   elPerPage.addEventListener("change", function(){
     if(!report) return;
-    report.perPage = parseInt(elPerPage.value, 10);
+    var lv = elPerPage.value;
+    if(lv === "v1" || lv === "h1"){ report.layout = lv; report.perPage = 1; }
+    else { report.layout = ""; report.perPage = parseInt(lv, 10); }
     touch();
     renderPages();
     persistDb();
@@ -2672,7 +2681,7 @@
 
     for(var gi=0; gi<total; gi++){
       var page = document.createElement("div");
-      page.className = "a4-page";
+      page.className = "a4-page" + (report.layout === "h1" ? " landscape" : "");
       page.dataset.pageIndex = gi;
 
       page.appendChild(buildHeader());
@@ -3184,17 +3193,20 @@
     var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
     if(!jsPDFCtor || !window.html2canvas) return Promise.reject({ code: "lib-missing" });
 
-    var pdf = new jsPDFCtor({ orientation: "portrait", unit: "mm", format: "a4" });
-    var pageW = pdf.internal.pageSize.getWidth();
-    var pageH = pdf.internal.pageSize.getHeight();
+    // 横向きレイアウト（.landscape）のページは、PDFもA4横で出力する
+    var firstLandscape = pageEls[0].classList.contains("landscape");
+    var pdf = new jsPDFCtor({ orientation: firstLandscape ? "landscape" : "portrait", unit: "mm", format: "a4" });
 
     var chain = Promise.resolve();
     pageEls.forEach(function(pageEl, i){
+      var landscape = pageEl.classList.contains("landscape");
       chain = chain.then(function(){
         return window.html2canvas(pageEl, { scale: preset.scale, backgroundColor: "#FDFCF8", useCORS: true });
       }).then(function(canvas){
         var imgData = canvas.toDataURL("image/jpeg", preset.quality);
-        if(i > 0) pdf.addPage();
+        if(i > 0) pdf.addPage("a4", landscape ? "landscape" : "portrait");
+        var pageW = pdf.internal.pageSize.getWidth();
+        var pageH = pdf.internal.pageSize.getHeight();
         pdf.addImage(imgData, "JPEG", 0, 0, pageW, pageH);
       });
     });
@@ -3215,6 +3227,17 @@
     });
   }
 
+  function saveBlobViaBrowser(blob, filename){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ a.remove(); URL.revokeObjectURL(url); }, 4000);
+  }
+
   function exportPdf(){
     elExportBtn.disabled = true;
     setStatus("PDFを作成しています…（写真の枚数により時間がかかります）");
@@ -3225,7 +3248,9 @@
       return (window.claude && window.claude.use) ? window.claude.use("downloads") : null;
     }).then(function(downloads){
       if(!downloads){
-        setStatus("この環境ではPDFの直接保存に対応していません。", "err");
+        // Claudeアプリ外（Vercelなど）では、通常のブラウザのダウンロードで保存する
+        saveBlobViaBrowser(blob, pdfFileName());
+        setStatus("PDFをダウンロードしました", "ok");
         elExportBtn.disabled = false;
         return null;
       }
