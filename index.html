@@ -880,8 +880,19 @@
 
       <section class="card">
         <h2><span class="n">03</span>データの削除</h2>
-        <p class="hint" style="margin-top:0;">すべての報告書をサーバーから削除します。元に戻せません。</p>
+        <p class="hint" style="margin-top:0;">すべての報告書をサーバーから削除します。元に戻せません。削除にはパスワードが必要です。</p>
         <button class="btn btn-danger-outline btn-block" id="wipeAllBtn">すべての報告書を削除</button>
+        <div id="wipeAuth" hidden style="margin-top:12px;">
+          <div class="field">
+            <label for="wipePassword">パスワード</label>
+            <input type="password" id="wipePassword" autocomplete="off" inputmode="numeric" placeholder="パスワードを入力">
+          </div>
+          <div id="wipeErr" style="font-size:12px; color:var(--danger); min-height:1.4em; margin-bottom:6px;"></div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn btn-danger-outline confirming" style="flex:1" id="wipeConfirmBtn">削除する</button>
+            <button type="button" class="btn btn-ghost" id="wipeCancelBtn">キャンセル</button>
+          </div>
+        </div>
       </section>
     </div>
   </div>
@@ -2302,20 +2313,20 @@
     }
   }
 
-  var wipeTimer = null;
-  elWipeAllBtn.addEventListener("click", function(){
-    if(!elWipeAllBtn.classList.contains("confirming")){
-      elWipeAllBtn.classList.add("confirming");
-      elWipeAllBtn.textContent = "もう一度押すとすべて削除します";
-      wipeTimer = setTimeout(function(){
-        elWipeAllBtn.classList.remove("confirming");
-        elWipeAllBtn.textContent = "すべての報告書を削除";
-      }, 3500);
-      return;
-    }
-    clearTimeout(wipeTimer);
-    elWipeAllBtn.classList.remove("confirming");
-    elWipeAllBtn.textContent = "すべての報告書を削除";
+  // 全削除はパスワード（SHA-256ハッシュで照合）を入力したときだけ実行する。
+  var WIPE_PASSWORD_HASH = "67b75961400e53222b0107d3e6c3b223d6de41c6875c202704ca580a7fece038";
+  var elWipeAuth = $("wipeAuth"), elWipePassword = $("wipePassword"), elWipeErr = $("wipeErr"),
+      elWipeConfirmBtn = $("wipeConfirmBtn"), elWipeCancelBtn = $("wipeCancelBtn");
+
+  function closeWipeAuth(){
+    elWipeAuth.hidden = true;
+    elWipeAllBtn.hidden = false;
+    elWipePassword.value = "";
+    elWipeErr.textContent = "";
+    elWipeConfirmBtn.disabled = false;
+  }
+
+  function wipeAllReports(){
     if(!dbCap) return;
     var ids = Object.keys(reportsCache);
     Promise.all(ids.map(function(id){ return dbCap.collection("reports").doc(id).delete(); })).then(function(){
@@ -2326,7 +2337,37 @@
       showBanner("一部の報告書を削除できませんでした。更新して確認してください。", "err");
       reloadAll(false);
     });
+  }
+
+  elWipeAllBtn.addEventListener("click", function(){
+    elWipeAllBtn.hidden = true;
+    elWipeAuth.hidden = false;
+    elWipeErr.textContent = "";
+    elWipePassword.focus();
   });
+  elWipeCancelBtn.addEventListener("click", closeWipeAuth);
+
+  function tryWipe(){
+    var value = elWipePassword.value || "";
+    if(!value){ elWipePassword.focus(); return; }
+    elWipeConfirmBtn.disabled = true;
+    sha256Hex(value).then(function(hex){
+      elWipeConfirmBtn.disabled = false;
+      if(hex === WIPE_PASSWORD_HASH){
+        closeWipeAuth();
+        wipeAllReports();
+      } else {
+        elWipeErr.textContent = "パスワードが違います";
+        elWipePassword.value = "";
+        elWipePassword.focus();
+      }
+    }).catch(function(){
+      elWipeConfirmBtn.disabled = false;
+      elWipeErr.textContent = "確認できませんでした。もう一度お試しください。";
+    });
+  }
+  elWipeConfirmBtn.addEventListener("click", tryWipe);
+  elWipePassword.addEventListener("keydown", function(e){ if(e.key === "Enter") tryWipe(); });
 
   // ---------- editor: meta form ----------
   function fillMetaForm(){
