@@ -623,7 +623,6 @@
     </div>
     <nav class="topbar-nav" id="topbarNav">
       <button class="nav-tab" id="navListBtn" type="button">報告書一覧</button>
-      <button class="nav-tab" id="navMasterBtn" type="button">マスタ管理</button>
       <button class="nav-tab" id="navAdminBtn" type="button">⚙ 管理画面</button>
     </nav>
     <div class="topbar-actions">
@@ -650,203 +649,199 @@
     <div class="report-grid" id="reportGrid"></div>
   </div>
 
-  <!-- ===== master (independent page) ===== -->
-  <div id="viewMaster" hidden>
-    <!-- マスタ管理は独立した全幅ページ。タブごとに1ページずつ切り替える -->
-    <section class="card master-page">
-      <div class="master-page-head">
-        <h2>マスタ管理</h2>
-        <div class="master-subtabs" id="masterSubtabs">
-          <button type="button" class="master-subtab active" data-master-tab="category">写真の分類</button>
-          <button type="button" class="master-subtab" data-master-tab="photographer">作成者</button>
-          <button type="button" class="master-subtab" data-master-tab="siteName">現場名</button>
-          <button type="button" class="master-subtab" data-master-tab="address">住所</button>
-          <button type="button" class="master-subtab" data-master-tab="orderer">発注者</button>
-          <button type="button" class="master-subtab" data-master-tab="company">会社名</button>
-          <button type="button" class="master-subtab" data-master-tab="email">メールアドレス</button>
-          <button type="button" class="master-subtab" data-master-tab="blackboard">工事用黒板</button>
-          <button type="button" class="master-subtab" data-master-tab="layout">レイアウト</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelCategory">
-        <div class="master-panel-toolbar">
-          <p class="hint">写真ごとの分類プルダウンに反映されます。行を上下に入れ替えて並び順を変更できます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterCategoryBulkToggle">一括編集</button>
-        </div>
-        <div class="master-rowlist" id="masterCategoryRowlist"></div>
-        <div class="master-bulk-wrap" id="masterCategoryBulkWrap" hidden>
-          <textarea class="master-bulk-textarea" id="masterCategoryBulkTextarea" spellcheck="false"></textarea>
-          <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
-          <div class="master-bulk-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="masterCategoryBulkSave">この内容で保存</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="masterCategoryBulkCancel">キャンセル</button>
-          </div>
-        </div>
-        <div class="master-add">
-          <input type="text" id="masterCategoryInput" placeholder="分類名を追加（例）足場撤去">
-          <button type="button" class="btn btn-ghost btn-sm" id="masterCategoryAddBtn">追加</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelPhotographer" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">報告書の「作成者」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterPhotographerBulkToggle">一括編集</button>
-        </div>
-        <div class="master-rowlist" id="masterPhotographerRowlist"></div>
-        <div class="master-bulk-wrap" id="masterPhotographerBulkWrap" hidden>
-          <textarea class="master-bulk-textarea" id="masterPhotographerBulkTextarea" spellcheck="false"></textarea>
-          <p class="master-bulk-hint">1行に1名「姓 名」の形式で入力してください（例）山田 太郎</p>
-          <div class="master-bulk-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="masterPhotographerBulkSave">この内容で保存</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="masterPhotographerBulkCancel">キャンセル</button>
-          </div>
-        </div>
-        <div class="master-add">
-          <input type="text" id="masterPhotographerLastInput" placeholder="姓（例）山田">
-          <input type="text" id="masterPhotographerFirstInput" placeholder="名（例）太郎">
-          <button type="button" class="btn btn-ghost btn-sm" id="masterPhotographerAddBtn">追加</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelSiteName" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">報告書の「現場名」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterSiteNameBulkToggle">一括編集</button>
-        </div>
-        <div class="master-rowlist" id="masterSiteNameRowlist"></div>
-        <div class="master-bulk-wrap" id="masterSiteNameBulkWrap" hidden>
-          <textarea class="master-bulk-textarea" id="masterSiteNameBulkTextarea" spellcheck="false"></textarea>
-          <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
-          <div class="master-bulk-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="masterSiteNameBulkSave">この内容で保存</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="masterSiteNameBulkCancel">キャンセル</button>
-          </div>
-        </div>
-        <div class="master-add">
-          <input type="text" id="masterSiteNameInput" placeholder="現場名を追加（例）○○ビル新築工事現場">
-          <button type="button" class="btn btn-ghost btn-sm" id="masterSiteNameAddBtn">追加</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelAddress" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">報告書の「住所」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterAddressBulkToggle">一括編集</button>
-        </div>
-        <div class="master-rowlist" id="masterAddressRowlist"></div>
-        <div class="master-bulk-wrap" id="masterAddressBulkWrap" hidden>
-          <textarea class="master-bulk-textarea" id="masterAddressBulkTextarea" spellcheck="false"></textarea>
-          <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
-          <div class="master-bulk-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="masterAddressBulkSave">この内容で保存</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="masterAddressBulkCancel">キャンセル</button>
-          </div>
-        </div>
-        <div class="master-add">
-          <input type="text" id="masterAddressInput" placeholder="住所を追加（例）東京都渋谷区○○ 1-2-3">
-          <button type="button" class="btn btn-ghost btn-sm" id="masterAddressAddBtn">追加</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelOrderer" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">報告書の「発注者」欄で選択肢として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterOrdererBulkToggle">一括編集</button>
-        </div>
-        <div class="master-rowlist" id="masterOrdererRowlist"></div>
-        <div class="master-bulk-wrap" id="masterOrdererBulkWrap" hidden>
-          <textarea class="master-bulk-textarea" id="masterOrdererBulkTextarea" spellcheck="false"></textarea>
-          <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
-          <div class="master-bulk-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="masterOrdererBulkSave">この内容で保存</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="masterOrdererBulkCancel">キャンセル</button>
-          </div>
-        </div>
-        <div class="master-add">
-          <input type="text" id="masterOrdererInput" placeholder="発注者名を追加（例）○○建設株式会社">
-          <button type="button" class="btn btn-ghost btn-sm" id="masterOrdererAddBtn">追加</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelCompany" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">報告書の「会社名」欄・フッター表示で選択肢として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterCompanyBulkToggle">一括編集</button>
-        </div>
-        <div class="master-rowlist" id="masterCompanyRowlist"></div>
-        <div class="master-bulk-wrap" id="masterCompanyBulkWrap" hidden>
-          <textarea class="master-bulk-textarea" id="masterCompanyBulkTextarea" spellcheck="false"></textarea>
-          <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
-          <div class="master-bulk-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="masterCompanyBulkSave">この内容で保存</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="masterCompanyBulkCancel">キャンセル</button>
-          </div>
-        </div>
-        <div class="master-add">
-          <input type="text" id="masterCompanyInput" placeholder="会社名を追加（例）株式会社サノー">
-          <button type="button" class="btn btn-ghost btn-sm" id="masterCompanyAddBtn">追加</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelEmail" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">PDFをメールで送る際の宛先候補として呼び出せます。行を上下に入れ替えて並び順を変更できます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterEmailBulkToggle">一括編集</button>
-        </div>
-        <div class="master-rowlist" id="masterEmailRowlist"></div>
-        <div class="master-bulk-wrap" id="masterEmailBulkWrap" hidden>
-          <textarea class="master-bulk-textarea" id="masterEmailBulkTextarea" spellcheck="false"></textarea>
-          <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
-          <div class="master-bulk-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="masterEmailBulkSave">この内容で保存</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="masterEmailBulkCancel">キャンセル</button>
-          </div>
-        </div>
-        <div class="master-add">
-          <input type="email" id="masterEmailInput" placeholder="メールアドレスを追加（例）example@sanoh-ltd.jp">
-          <button type="button" class="btn btn-ghost btn-sm" id="masterEmailAddBtn">追加</button>
-        </div>
-      </div>
-
-      <div class="master-subpanel" id="masterPanelBlackboard" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">使用する工事用黒板を登録します。実物の写真をアップロードするか、アプリ内で項目を指定してテンプレートを作成できます。行を上下に入れ替えて並び順を変更できます。</p>
-        </div>
-        <div class="master-rowlist master-rowlist-image" id="masterBlackboardRowlist"></div>
-
-        <p class="master-add-label">写真をアップロードして登録</p>
-        <div class="master-add master-add-image">
-          <input type="text" id="masterBlackboardNameInput" placeholder="黒板の名称（例）W-1 無地・よこ型">
-          <input type="file" accept="image/*" id="masterBlackboardFileInput" hidden>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterBlackboardFileBtn">画像を選択</button>
-          <span class="master-add-filename" id="masterBlackboardFileName">未選択</span>
-          <button type="button" class="btn btn-primary btn-sm" id="masterBlackboardAddBtn">追加</button>
-        </div>
-
-        <p class="master-add-label">アプリ内でテンプレートを作成</p>
-        <div class="master-add-template">
-          <input type="text" id="masterBlackboardTplNameInput" placeholder="黒板の名称（例）自社標準黒板">
-          <textarea id="masterBlackboardTplFieldsInput" rows="4" placeholder="項目名を1行に1つ（例）&#10;発注者&#10;現場名&#10;日付&#10;摘要"></textarea>
-          <button type="button" class="btn btn-primary btn-sm" id="masterBlackboardTplAddBtn">テンプレートを作成</button>
-        </div>
-      </div>
-      <div class="master-subpanel" id="masterPanelLayout" hidden>
-        <div class="master-panel-toolbar">
-          <p class="hint">報告書の「レイアウト」と、管理画面の「既定のレイアウト」に出る選択肢です。表示名の変更、表示のON/OFF、並び順の変更ができます。</p>
-          <button type="button" class="btn btn-ghost btn-sm" id="masterLayoutResetBtn">初期状態に戻す</button>
-        </div>
-        <div class="master-rowlist" id="masterLayoutRowlist"></div>
-      </div>
-    </section>
-  </div>
-
   <!-- ===== admin (settings / data) screen ===== -->
   <div id="viewAdmin" hidden>
     <div class="list-toolbar">
       <h2>管理画面</h2>
     </div>
+
+  <section class="card master-page">
+    <div class="master-page-head">
+      <h2>マスタ管理</h2>
+      <div class="master-subtabs" id="masterSubtabs">
+        <button type="button" class="master-subtab active" data-master-tab="category">写真の分類</button>
+        <button type="button" class="master-subtab" data-master-tab="photographer">作成者</button>
+        <button type="button" class="master-subtab" data-master-tab="siteName">現場名</button>
+        <button type="button" class="master-subtab" data-master-tab="address">住所</button>
+        <button type="button" class="master-subtab" data-master-tab="orderer">発注者</button>
+        <button type="button" class="master-subtab" data-master-tab="company">会社名</button>
+        <button type="button" class="master-subtab" data-master-tab="email">メールアドレス</button>
+        <button type="button" class="master-subtab" data-master-tab="blackboard">工事用黒板</button>
+        <button type="button" class="master-subtab" data-master-tab="layout">レイアウト</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelCategory">
+      <div class="master-panel-toolbar">
+        <p class="hint">写真ごとの分類プルダウンに反映されます。行を上下に入れ替えて並び順を変更できます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterCategoryBulkToggle">一括編集</button>
+      </div>
+      <div class="master-rowlist" id="masterCategoryRowlist"></div>
+      <div class="master-bulk-wrap" id="masterCategoryBulkWrap" hidden>
+        <textarea class="master-bulk-textarea" id="masterCategoryBulkTextarea" spellcheck="false"></textarea>
+        <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
+        <div class="master-bulk-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="masterCategoryBulkSave">この内容で保存</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterCategoryBulkCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="master-add">
+        <input type="text" id="masterCategoryInput" placeholder="分類名を追加（例）足場撤去">
+        <button type="button" class="btn btn-ghost btn-sm" id="masterCategoryAddBtn">追加</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelPhotographer" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">報告書の「作成者」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterPhotographerBulkToggle">一括編集</button>
+      </div>
+      <div class="master-rowlist" id="masterPhotographerRowlist"></div>
+      <div class="master-bulk-wrap" id="masterPhotographerBulkWrap" hidden>
+        <textarea class="master-bulk-textarea" id="masterPhotographerBulkTextarea" spellcheck="false"></textarea>
+        <p class="master-bulk-hint">1行に1名「姓 名」の形式で入力してください（例）山田 太郎</p>
+        <div class="master-bulk-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="masterPhotographerBulkSave">この内容で保存</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterPhotographerBulkCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="master-add">
+        <input type="text" id="masterPhotographerLastInput" placeholder="姓（例）山田">
+        <input type="text" id="masterPhotographerFirstInput" placeholder="名（例）太郎">
+        <button type="button" class="btn btn-ghost btn-sm" id="masterPhotographerAddBtn">追加</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelSiteName" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">報告書の「現場名」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterSiteNameBulkToggle">一括編集</button>
+      </div>
+      <div class="master-rowlist" id="masterSiteNameRowlist"></div>
+      <div class="master-bulk-wrap" id="masterSiteNameBulkWrap" hidden>
+        <textarea class="master-bulk-textarea" id="masterSiteNameBulkTextarea" spellcheck="false"></textarea>
+        <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
+        <div class="master-bulk-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="masterSiteNameBulkSave">この内容で保存</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterSiteNameBulkCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="master-add">
+        <input type="text" id="masterSiteNameInput" placeholder="現場名を追加（例）○○ビル新築工事現場">
+        <button type="button" class="btn btn-ghost btn-sm" id="masterSiteNameAddBtn">追加</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelAddress" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">報告書の「住所」欄で候補として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterAddressBulkToggle">一括編集</button>
+      </div>
+      <div class="master-rowlist" id="masterAddressRowlist"></div>
+      <div class="master-bulk-wrap" id="masterAddressBulkWrap" hidden>
+        <textarea class="master-bulk-textarea" id="masterAddressBulkTextarea" spellcheck="false"></textarea>
+        <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
+        <div class="master-bulk-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="masterAddressBulkSave">この内容で保存</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterAddressBulkCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="master-add">
+        <input type="text" id="masterAddressInput" placeholder="住所を追加（例）東京都渋谷区○○ 1-2-3">
+        <button type="button" class="btn btn-ghost btn-sm" id="masterAddressAddBtn">追加</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelOrderer" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">報告書の「発注者」欄で選択肢として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterOrdererBulkToggle">一括編集</button>
+      </div>
+      <div class="master-rowlist" id="masterOrdererRowlist"></div>
+      <div class="master-bulk-wrap" id="masterOrdererBulkWrap" hidden>
+        <textarea class="master-bulk-textarea" id="masterOrdererBulkTextarea" spellcheck="false"></textarea>
+        <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
+        <div class="master-bulk-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="masterOrdererBulkSave">この内容で保存</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterOrdererBulkCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="master-add">
+        <input type="text" id="masterOrdererInput" placeholder="発注者名を追加（例）○○建設株式会社">
+        <button type="button" class="btn btn-ghost btn-sm" id="masterOrdererAddBtn">追加</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelCompany" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">報告書の「会社名」欄・フッター表示で選択肢として表示されます。行を上下に入れ替えて並び順を変更できます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterCompanyBulkToggle">一括編集</button>
+      </div>
+      <div class="master-rowlist" id="masterCompanyRowlist"></div>
+      <div class="master-bulk-wrap" id="masterCompanyBulkWrap" hidden>
+        <textarea class="master-bulk-textarea" id="masterCompanyBulkTextarea" spellcheck="false"></textarea>
+        <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
+        <div class="master-bulk-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="masterCompanyBulkSave">この内容で保存</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterCompanyBulkCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="master-add">
+        <input type="text" id="masterCompanyInput" placeholder="会社名を追加（例）株式会社サノー">
+        <button type="button" class="btn btn-ghost btn-sm" id="masterCompanyAddBtn">追加</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelEmail" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">PDFをメールで送る際の宛先候補として呼び出せます。行を上下に入れ替えて並び順を変更できます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterEmailBulkToggle">一括編集</button>
+      </div>
+      <div class="master-rowlist" id="masterEmailRowlist"></div>
+      <div class="master-bulk-wrap" id="masterEmailBulkWrap" hidden>
+        <textarea class="master-bulk-textarea" id="masterEmailBulkTextarea" spellcheck="false"></textarea>
+        <p class="master-bulk-hint">1行に1件。行の削除・追加・並べ替えがそのまま反映されます。</p>
+        <div class="master-bulk-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="masterEmailBulkSave">この内容で保存</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="masterEmailBulkCancel">キャンセル</button>
+        </div>
+      </div>
+      <div class="master-add">
+        <input type="email" id="masterEmailInput" placeholder="メールアドレスを追加（例）example@sanoh-ltd.jp">
+        <button type="button" class="btn btn-ghost btn-sm" id="masterEmailAddBtn">追加</button>
+      </div>
+    </div>
+
+    <div class="master-subpanel" id="masterPanelBlackboard" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">使用する工事用黒板を登録します。実物の写真をアップロードするか、アプリ内で項目を指定してテンプレートを作成できます。行を上下に入れ替えて並び順を変更できます。</p>
+      </div>
+      <div class="master-rowlist master-rowlist-image" id="masterBlackboardRowlist"></div>
+
+      <p class="master-add-label">写真をアップロードして登録</p>
+      <div class="master-add master-add-image">
+        <input type="text" id="masterBlackboardNameInput" placeholder="黒板の名称（例）W-1 無地・よこ型">
+        <input type="file" accept="image/*" id="masterBlackboardFileInput" hidden>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterBlackboardFileBtn">画像を選択</button>
+        <span class="master-add-filename" id="masterBlackboardFileName">未選択</span>
+        <button type="button" class="btn btn-primary btn-sm" id="masterBlackboardAddBtn">追加</button>
+      </div>
+
+      <p class="master-add-label">アプリ内でテンプレートを作成</p>
+      <div class="master-add-template">
+        <input type="text" id="masterBlackboardTplNameInput" placeholder="黒板の名称（例）自社標準黒板">
+        <textarea id="masterBlackboardTplFieldsInput" rows="4" placeholder="項目名を1行に1つ（例）&#10;発注者&#10;現場名&#10;日付&#10;摘要"></textarea>
+        <button type="button" class="btn btn-primary btn-sm" id="masterBlackboardTplAddBtn">テンプレートを作成</button>
+      </div>
+    </div>
+    <div class="master-subpanel" id="masterPanelLayout" hidden>
+      <div class="master-panel-toolbar">
+        <p class="hint">報告書の「レイアウト」と、管理画面の「既定のレイアウト」に出る選択肢です。表示名の変更、表示のON/OFF、並び順の変更ができます。</p>
+        <button type="button" class="btn btn-ghost btn-sm" id="masterLayoutResetBtn">初期状態に戻す</button>
+      </div>
+      <div class="master-rowlist" id="masterLayoutRowlist"></div>
+    </div>
+  </section>
 
     <div class="admin-grid">
       <section class="card">
@@ -1317,7 +1312,7 @@
     }
   }catch(e){}
   var report = null;          // currently open report (editor)
-  var currentView = "list";   // "list" | "editor" | "master" | "admin"
+  var currentView = "list";   // "list" | "editor" | "admin"
 
   // ---------- element refs ----------
   var $ = function(id){ return document.getElementById(id); };
@@ -1385,17 +1380,14 @@
   }
 
   // ---------- navigation ----------
-  var elViewMaster = $("viewMaster"), elNavMasterBtn = $("navMasterBtn");
   function switchView(){
-    var v = (currentView === "editor" && report) ? "editor" : (currentView === "admin" ? "admin" : (currentView === "master" ? "master" : "list"));
+    var v = (currentView === "editor" && report) ? "editor" : (currentView === "admin" ? "admin" : "list");
     elViewList.hidden = v !== "list";
     elViewEditor.hidden = v !== "editor";
-    elViewMaster.hidden = v !== "master";
     elViewAdmin.hidden = v !== "admin";
     elBackBtn.hidden = v !== "editor";
     elTopbarNav.hidden = v === "editor";
     elNavListBtn.classList.toggle("active", v === "list");
-    elNavMasterBtn.classList.toggle("active", v === "master");
     elNavAdminBtn.classList.toggle("active", v === "admin");
     elTopStat.textContent = v === "editor"
       ? "写真 " + report.photos.length + " 枚・" + Math.max(1, Math.ceil(report.photos.length / report.perPage)) + " ページ"
@@ -1413,12 +1405,10 @@
   }
   function goToList(){ currentView = "list"; renderReportList(); switchView(); }
   function goToAdmin(){ currentView = "admin"; renderAdmin(); switchView(); }
-  function goToMaster(){ currentView = "master"; renderAdmin(); switchView(); }
 
   elBackBtn.addEventListener("click", goToList);
   elNavListBtn.addEventListener("click", goToList);
   elNavAdminBtn.addEventListener("click", goToAdmin);
-  elNavMasterBtn.addEventListener("click", goToMaster);
 
   // ---------- per-document debounced save (reports) ----------
   var saveTimers = {}, saveInFlight = {}, saveDirty = {};
@@ -3887,7 +3877,7 @@
     function finish(c){
       setCurrentCreator(c);
       overlay.remove();
-      if(currentView === "admin" || currentView === "master") renderAdmin();
+      if(currentView === "admin") renderAdmin();
     }
 
     function submit(){
@@ -3975,7 +3965,7 @@
         currentView = "list";
       }
       renderReportList();
-      if(currentView === "admin" || currentView === "master") renderAdmin();
+      if(currentView === "admin") renderAdmin();
       if(currentView === "editor" && report) renderAll();
       switchView();
     });
