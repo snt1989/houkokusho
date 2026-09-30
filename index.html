@@ -445,6 +445,10 @@
     flex:1 1 160px; min-width:0; font:inherit; font-size:12.5px; padding:8px 10px; border-radius:7px;
     border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink);
   }
+  .email-pdf-row select{
+    flex:none; font:inherit; font-size:12.5px; padding:8px 8px; border-radius:7px;
+    border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink);
+  }
   .email-pdf-row .btn{flex:none;}
 
   .hint{font-size:11px; color:var(--ink-faint); line-height:1.6; margin-top:10px;}
@@ -1005,7 +1009,7 @@
 
         <section class="card">
           <div class="field pdf-size-field">
-            <label for="pdfSizeSelect">PDFのファイルサイズ</label>
+            <label for="pdfSizeSelect">ファイルサイズ（PDF・写真）</label>
             <select id="pdfSizeSelect">
               <option value="small">小（軽量・メール共有向け）</option>
               <option value="standard" selected>標準</option>
@@ -1013,9 +1017,14 @@
             </select>
           </div>
           <button class="btn btn-primary btn-block" id="exportBtn">PDFを書き出す</button>
-          <div class="email-pdf-row" id="emailPdfRow" hidden>
+          <button class="btn btn-ghost btn-block" id="exportImgBtn" style="margin-top:8px;">写真で書き出す（JPEG）</button>
+          <div class="email-pdf-row" id="emailPdfRow">
             <input type="email" id="emailPdfTo" placeholder="送り先メールアドレス" list="masterEmailList">
-            <button type="button" class="btn btn-ghost btn-sm" id="emailPdfBtn">📧 メールで送る</button>
+            <select id="emailFormatSelect" aria-label="メールで送る形式">
+              <option value="pdf">PDF</option>
+              <option value="image">写真</option>
+            </select>
+            <button type="button" class="btn btn-ghost btn-sm" id="emailPdfBtn">📧 メールで送信</button>
           </div>
           <div class="status-line" id="statusLine"></div>
           <button class="btn btn-danger-outline btn-block" id="clearBtn" style="margin-top:8px;">すべての写真を削除</button>
@@ -1037,6 +1046,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -3311,21 +3321,18 @@
   });
 
   // ---------- PDF export ----------
-  elExportBtn.addEventListener("click", function(){
-    if(!report || !report.photos.length){
-      setStatus("先に写真を追加してください", "err");
-      return;
-    }
-    exportPdf();
-  });
+  var elExportImgBtn = $("exportImgBtn"), elEmailFormat = $("emailFormatSelect");
 
-  elEmailPdfBtn.addEventListener("click", function(){
+  function needPhotos(){
     if(!report || !report.photos.length){
       setStatus("先に写真を追加してください", "err");
-      return;
+      return false;
     }
-    emailPdf();
-  });
+    return true;
+  }
+  elExportBtn.addEventListener("click", function(){ if(needPhotos()) exportFiles("pdf"); });
+  elExportImgBtn.addEventListener("click", function(){ if(needPhotos()) exportFiles("image"); });
+  elEmailPdfBtn.addEventListener("click", function(){ if(needPhotos()) emailExport(elEmailFormat.value === "image" ? "image" : "pdf"); });
 
   function pdfFileName(){
     var name = (report.meta.title || "写真報告書").replace(/[\\/:*?"<>|]/g,"").trim() || "写真報告書";
@@ -3400,91 +3407,162 @@
     setTimeout(function(){ a.remove(); URL.revokeObjectURL(url); }, 4000);
   }
 
-  function exportPdf(){
-    elExportBtn.disabled = true;
-    setStatus("PDFを作成しています…（写真の枚数により時間がかかります）");
+  // ---------- 書き出し（PDF / 写真）とメール送信 ----------
+  function exportBaseName(){ return pdfFileName().replace(/\.pdf$/, ""); }
 
-    var blob;
-    buildPdfBlob(currentPdfSizePreset()).then(function(b){
-      blob = b;
-      return (window.claude && window.claude.use) ? window.claude.use("downloads") : null;
-    }).then(function(downloads){
-      if(!downloads){
-        // Claudeアプリ外（Vercelなど）では、通常のブラウザのダウンロードで保存する
-        saveBlobViaBrowser(blob, pdfFileName());
-        setStatus("PDFをダウンロードしました", "ok");
-        elExportBtn.disabled = false;
-        return null;
-      }
-      return downloads.save({ filename: pdfFileName(), data: blob });
-    }).then(function(result){
-      elExportBtn.disabled = false;
-      if(result && result.status === "saved"){
-        setStatus("PDFを保存しました", "ok");
-      } else if(result && result.status === "delivered"){
-        setStatus("PDFを送信しました", "ok");
-      }
-    }).catch(function(err){
-      elExportBtn.disabled = false;
-      var code = err && err.code;
-      if(code === "declined"){
-        setStatus("");
-      } else if(code === "no-pages"){
-        setStatus("書き出すページがありません", "err");
-      } else if(code === "lib-missing"){
-        setStatus("PDF機能の読み込みに失敗しました。再読み込みしてください。", "err");
-      } else if(code === "rate_limited"){
-        setStatus("少し待ってからもう一度お試しください", "err");
-      } else {
-        setStatus("PDFの作成に失敗しました。もう一度お試しください。", "err");
-      }
+  // 各ページをJPEG画像にする（1ページ＝1枚）
+  function buildImageFiles(preset){
+    preset = preset || PDF_SIZE_PRESETS.standard;
+    var pageEls = Array.prototype.slice.call(elPages.querySelectorAll(".a4-page"));
+    if(!pageEls.length) return Promise.reject({ code: "no-pages" });
+    if(!window.html2canvas) return Promise.reject({ code: "lib-missing" });
+    var base = exportBaseName();
+    var files = [];
+    var chain = Promise.resolve();
+    pageEls.forEach(function(pageEl, i){
+      chain = chain.then(function(){
+        return window.html2canvas(pageEl, { scale: preset.scale, backgroundColor: "#FDFCF8", useCORS: true });
+      }).then(function(canvas){
+        return new Promise(function(resolve, reject){
+          canvas.toBlob(function(b){
+            if(!b){ reject(new Error("toBlob-failed")); return; }
+            var n = pageEls.length > 1 ? "_" + String(i + 1).padStart(2, "0") : "";
+            files.push({ blob: b, filename: base + n + ".jpg", mime: "image/jpeg" });
+            resolve();
+          }, "image/jpeg", preset.quality);
+        });
+      });
+    });
+    return chain.then(function(){ return files; });
+  }
+
+  // format: "pdf" | "image" → [{ blob, filename, mime }]
+  function buildExportFiles(format){
+    var preset = currentPdfSizePreset();
+    if(format === "image") return buildImageFiles(preset);
+    return buildPdfBlob(preset).then(function(b){
+      return [{ blob: b, filename: pdfFileName(), mime: "application/pdf" }];
     });
   }
 
-  function emailPdf(){
-    if(!mcpCap){
-      setStatus("この環境ではメール送信に対応していません。", "err");
-      return;
-    }
+  // 複数ファイル（複数ページの写真）は、ダウンロード用に1つのZIPにまとめる
+  function packForDownload(files){
+    if(files.length === 1) return Promise.resolve(files[0]);
+    if(!window.JSZip) return Promise.reject({ code: "lib-missing" });
+    var zip = new window.JSZip();
+    files.forEach(function(f){ zip.file(f.filename, f.blob); });
+    return zip.generateAsync({ type: "blob" }).then(function(b){
+      return { blob: b, filename: exportBaseName() + "_写真.zip", mime: "application/zip" };
+    });
+  }
+
+  // Claudeアプリ内は保存ダイアログ、それ以外は通常のブラウザダウンロードで保存する
+  function saveExportFile(file){
+    var cap = (window.claude && window.claude.use) ? window.claude.use("downloads") : null;
+    return Promise.resolve(cap).then(function(downloads){
+      if(!downloads){
+        saveBlobViaBrowser(file.blob, file.filename);
+        return { status: "downloaded" };
+      }
+      return downloads.save({ filename: file.filename, data: file.blob });
+    });
+  }
+
+  function exportErrorMessage(err, what){
+    var code = err && err.code;
+    if(code === "declined") return "";
+    if(code === "no-pages") return "書き出すページがありません";
+    if(code === "lib-missing") return "書き出し機能の読み込みに失敗しました。再読み込みしてください。";
+    if(code === "rate_limited") return "少し待ってからもう一度お試しください";
+    return what + "の作成に失敗しました。もう一度お試しください。";
+  }
+
+  function exportFiles(format){
+    var isImage = format === "image";
+    var what = isImage ? "写真" : "PDF";
+    elExportBtn.disabled = true; elExportImgBtn.disabled = true;
+    setStatus(what + "を作成しています…（" + (isImage ? "ページ数" : "写真の枚数") + "により時間がかかります）");
+
+    buildExportFiles(format).then(packForDownload).then(saveExportFile).then(function(result){
+      elExportBtn.disabled = false; elExportImgBtn.disabled = false;
+      var st = result && result.status;
+      if(st === "delivered") setStatus(what + "を送信しました", "ok");
+      else if(st === "downloaded") setStatus(what + "をダウンロードしました", "ok");
+      else if(st === "saved") setStatus(what + "を保存しました", "ok");
+    }).catch(function(err){
+      elExportBtn.disabled = false; elExportImgBtn.disabled = false;
+      setStatus(exportErrorMessage(err, what), exportErrorMessage(err, what) ? "err" : "");
+    });
+  }
+
+  function emailExport(format){
     var to = (elEmailPdfTo.value || "").trim();
     if(!to){
       setStatus("送り先メールアドレスを入力してください", "err");
       elEmailPdfTo.focus();
       return;
     }
+    var what = format === "image" ? "写真" : "PDF";
+    var subject = (report.meta.title || "写真報告書") + "（" + (report.meta.date || todayStr) + "）";
+    var lines = ["写真報告書を添付いたします。", ""];
+    if(report.meta.siteName) lines.push("現場名：" + report.meta.siteName);
+    if(report.meta.title) lines.push("発注者：" + report.meta.title);
+    lines.push("日付：" + (report.meta.date || todayStr));
+
     elEmailPdfBtn.disabled = true;
-    setStatus("PDFを作成してメールを送信しています…");
-    buildPdfBlob(currentPdfSizePreset()).then(function(blob){
-      return blobToBase64(blob);
-    }).then(function(base64){
-      var subject = (report.meta.title || "写真報告書") + "（" + (report.meta.date || todayStr) + "）";
-      var lines = ["写真報告書を添付いたします。", ""];
-      if(report.meta.siteName) lines.push("現場名：" + report.meta.siteName);
-      if(report.meta.title) lines.push("発注者：" + report.meta.title);
-      lines.push("日付：" + (report.meta.date || todayStr));
-      return mcpCap.callTool("Gmail", "send_message", {
-        to: [to],
-        subject: subject,
-        body: lines.join("\n"),
-        attachments: [{ content: base64, filename: pdfFileName(), mimeType: "application/pdf" }]
+    setStatus(what + "を作成しています…");
+    try{ localStorage.setItem("photoReportEmailTo", to); }catch(e){}
+
+    // メールアプリで開く（添付はできないため、ファイルをダウンロードしてから作成画面を開く）
+    function viaMailto(files){
+      return packForDownload(files).then(function(f){
+        saveBlobViaBrowser(f.blob, f.filename);
+        var body = lines.concat(["", "※ダウンロードした「" + f.filename + "」を添付して送信してください。"]).join("\r\n");
+        window.location.href = "mailto:" + encodeURIComponent(to) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+        return "mailto";
       });
-    }).then(function(){
+    }
+
+    buildExportFiles(format).then(function(files){
+      if(mcpCap){
+        // Claudeアプリ内：Gmailから添付付きで直接送信
+        return Promise.all(files.map(function(f){
+          return blobToBase64(f.blob).then(function(b64){ return { content: b64, filename: f.filename, mimeType: f.mime }; });
+        })).then(function(atts){
+          return mcpCap.callTool("Gmail", "send_message", { to: [to], subject: subject, body: lines.join("\n"), attachments: atts });
+        }).then(function(){ return "sent"; });
+      }
+      // スマホなど：共有画面からメールアプリに添付して送る
+      var fileObjs = [];
+      try{ fileObjs = files.map(function(f){ return new File([f.blob], f.filename, { type: f.mime }); }); }catch(e){}
+      if(fileObjs.length && navigator.canShare && navigator.share && navigator.canShare({ files: fileObjs })){
+        return navigator.share({ files: fileObjs, title: subject, text: lines.join("\n") }).then(function(){
+          return "shared";
+        }, function(err){
+          if(err && err.name === "AbortError") return "cancelled";
+          return viaMailto(files);
+        });
+      }
+      return viaMailto(files);
+    }).then(function(result){
       elEmailPdfBtn.disabled = false;
-      setStatus("メールを送信しました", "ok");
-      try{ localStorage.setItem("photoReportEmailTo", to); }catch(e){}
+      if(result === "sent") setStatus("メールを送信しました", "ok");
+      else if(result === "shared") setStatus("共有しました", "ok");
+      else if(result === "mailto") setStatus("ファイルをダウンロードし、メール作成画面を開きました。ファイルを添付して送信してください。", "ok");
+      else setStatus("");
     }).catch(function(err){
       elEmailPdfBtn.disabled = false;
       var code = err && err.code;
-      if(code === "no-pages"){
-        setStatus("送信するページがありません", "err");
-      } else if(code === "lib-missing"){
-        setStatus("PDF機能の読み込みに失敗しました。再読み込みしてください。", "err");
-      } else if(code === "server_not_connected"){
+      if(code === "server_not_connected"){
         setStatus("Gmailが接続されていません。claude.aiでGmail連携を設定してください。", "err");
       } else if(code === "not_granted"){
         setStatus("メール送信が許可されていません。", "err");
       } else if(code === "rate_limited"){
         setStatus("混み合っています。少し待ってからもう一度お試しください。", "err");
+      } else if(code === "no-pages"){
+        setStatus("送信するページがありません", "err");
+      } else if(code === "lib-missing"){
+        setStatus("書き出し機能の読み込みに失敗しました。再読み込みしてください。", "err");
       } else {
         setStatus("メール送信に失敗しました。もう一度お試しください。", "err");
       }
@@ -4031,13 +4109,10 @@
   function startApp(caps){
     return prepareFallback(caps).then(function(resolvedCaps){
       dbCap = resolvedCaps[0]; assetsCap = resolvedCaps[1]; mcpCap = resolvedCaps[2];
-      if(mcpCap && elEmailPdfRow){
-        elEmailPdfRow.hidden = false;
-        try{
-          var savedTo = localStorage.getItem("photoReportEmailTo");
-          if(savedTo) elEmailPdfTo.value = savedTo;
-        }catch(e){}
-      }
+      try{
+        var savedTo = localStorage.getItem("photoReportEmailTo");
+        if(savedTo) elEmailPdfTo.value = savedTo;
+      }catch(e){}
       if(!dbCap){
         showBanner("データを保存できる環境がありません。Claudeのアプリ内でこのページを開くか、対応ブラウザでお試しください。", "err");
         return;
