@@ -1012,22 +1012,20 @@
             </div>
           </div>
           <details class="angle-help">
-            <summary>🧭 作業前後のアングル確認の使い方</summary>
+            <summary>🧭 アングル確認の使い方</summary>
             <ol>
-              <li>写真ごとの「分類」で、作業前の写真を<b>作業前</b>、作業後の写真を<b>作業後</b>に設定します。</li>
-              <li>作業前と作業後が組み合わさると、写真リストの上に「作業前後のアングル確認」が表示されます。</li>
-              <li>「🧭 アングル判定」を押すと、2枚の構図の一致度（%）が出ます。<br>
-                ✓ 75%以上：よく似ている ／ △ 45〜74%：やや異なる ／ ✕ 44%以下：大きく異なる<br>
-                撮り直したら「再判定」で確認できます。</li>
+              <li>写真を<b>2枚以上</b>追加すると、自動で2枚ずつ比べて、構図の一致度（%）が表示されます。写真の「分類」の設定は不要です。</li>
+              <li>結果は写真リストの上の「アングル確認」に出ます。<br>
+                ✓ 75%以上：よく似ている ／ △ 45〜74%：やや異なる ／ ✕ 44%以下：大きく異なる</li>
+              <li>写真を並べ替えたり削除したりして組み合わせが変わると、自動で判定し直します。「再判定」でいつでも判定し直せます。</li>
             </ol>
             <p class="angle-help-note"><b>組み合わせのルール</b><br>
-              ・1ページ2枚・3枚、縦1枚・横1枚：同じページ内で、上から順に「作業前」と「作業後」が組になります。<br>
-              ・1ページ4枚（2×2）：同じ列で、「作業前」の真下に「作業後」がある場合だけ組になります。<br>
-              ・1ページ1枚（全面）は同じページに2枚並ばないため、判定の対象になりません。</p>
+              ・写真の並び順で、1枚目と2枚目、3枚目と4枚目…のように2枚ずつ比べます（1ページに並ぶ枚数やレイアウトには関係しません）。<br>
+              ・写真が奇数枚のときは、最後の1枚は比べる相手がないため対象外です。</p>
             <p class="angle-help-note">写真は外部に送らず、端末の中だけで明暗のパターンを比べた目安です。厳密な判定ではないので、参考としてお使いください。</p>
           </details>
           <div class="angle-pairs-panel" id="anglePairsPanel" hidden>
-            <div class="angle-pairs-head">🧭 作業前後のアングル確認</div>
+            <div class="angle-pairs-head">🧭 アングル確認（2枚ずつ自動判定）</div>
             <div class="angle-pairs-list" id="anglePairsList"></div>
           </div>
           <div class="photolist" id="photoList"></div>
@@ -1316,6 +1314,7 @@
           o.angleCheck = { error: true, note: typeof acSrc.note === "string" ? acSrc.note : "" };
         } else if(typeof acSrc.percent === "number" && isFinite(acSrc.percent)){
           o.angleCheck = { percent: Math.max(0, Math.min(100, Math.round(acSrc.percent))), note: typeof acSrc.note === "string" ? acSrc.note : "" };
+          if(typeof acSrc.beforeId === "string" && acSrc.beforeId) o.angleCheck.beforeId = acSrc.beforeId;
         }
       }
       return o;
@@ -2818,7 +2817,14 @@
     var pairs = computeAnglePairs();
     if(!pairs.length){ elAnglePairsPanel.hidden = true; return; }
     elAnglePairsPanel.hidden = false;
+    var toRun = [];
     pairs.forEach(function(pair){
+      // 未判定、または組み合わせが変わって結果が古くなった組は、自動で判定する
+      var ac = pair.after.angleCheck;
+      if(!ac || (!ac.checking && ac.beforeId !== pair.before.id)){
+        pair.after.angleCheck = { checking: true, beforeId: pair.before.id };
+        toRun.push(pair);
+      }
       var row = document.createElement("div");
       row.className = "angle-pair-row";
 
@@ -2841,6 +2847,7 @@
       row.appendChild(buildAngleSidebarRow(pair.before, pair.after));
       elAnglePairsList.appendChild(row);
     });
+    toRun.forEach(function(pair){ autoAngleCheck(pair.before, pair.after); });
   }
 
   // ---------- A4 preview pages ----------
@@ -3124,67 +3131,48 @@
     return Math.round(Math.max(0, Math.min(100, soft)));
   }
 
-  function runAngleCheck(beforePhoto, afterPhoto){
-    if(!report) return;
-    afterPhoto.angleCheck = { checking: true };
-    touch(); renderAll();
-    Promise.all([loadImageEl(photoSrc(beforePhoto)), loadImageEl(photoSrc(afterPhoto))]).then(function(imgs){
+  function computeAngleResult(beforePhoto, afterPhoto){
+    return Promise.all([loadImageEl(photoSrc(beforePhoto)), loadImageEl(photoSrc(afterPhoto))]).then(function(imgs){
       var gridA = computeLumaGrid(imgs[0], 8, 6);
       var gridB = computeLumaGrid(imgs[1], 8, 6);
       var percent = gridSimilarityPercent(gridA, gridB);
       var note = percent >= 75 ? "構図がよく似ています" : (percent >= 45 ? "構図がやや異なります" : "構図が大きく異なります");
-      afterPhoto.angleCheck = { percent: percent, note: note };
-      touch(); renderAll(); persistDb();
-    }).catch(function(){
-      afterPhoto.angleCheck = { percent: 50, note: "画像を比較できなかったための概算値" };
+      return { percent: percent, note: note, beforeId: beforePhoto.id };
+    }, function(){
+      return { percent: 50, note: "画像を比較できなかったための概算値", beforeId: beforePhoto.id };
+    });
+  }
+
+  // 「再判定」ボタン用
+  function runAngleCheck(beforePhoto, afterPhoto){
+    if(!report) return;
+    afterPhoto.angleCheck = { checking: true, beforeId: beforePhoto.id };
+    touch(); renderAll();
+    computeAngleResult(beforePhoto, afterPhoto).then(function(res){
+      afterPhoto.angleCheck = res;
       touch(); renderAll(); persistDb();
     });
   }
 
-  function isAngleCheckPair(beforePhoto, afterPhoto){
-    return !!(afterPhoto && beforePhoto && afterPhoto.category === "作業後" && beforePhoto.category === "作業前" && photoHasImage(afterPhoto) && photoHasImage(beforePhoto));
+  // 写真が2枚以上あるときの自動判定（ボタン操作なし）
+  function autoAngleCheck(beforePhoto, afterPhoto){
+    computeAngleResult(beforePhoto, afterPhoto).then(function(res){
+      var cur = afterPhoto.angleCheck;
+      if(!cur || cur.beforeId !== beforePhoto.id) return; // 判定中に組み合わせが変わった
+      afterPhoto.angleCheck = res;
+      persistDb();
+      renderAnglePairsPanel();
+    });
   }
 
-  // レイアウト（1ページあたりの枚数）に応じてペアの決め方を変える。
-  // ・1列のレイアウト（1枚 / 2枚 / 3枚など）：ページ内の並び順に関わらず「作業前」と「作業後」を判定
-  // ・2列のレイアウト（4枚）：同じ列で上下に並んでいる場合のみ判定（1ページに2組あれば2組とも判定）
+  // 写真の並び順で2枚ずつ（1・2枚目、3・4枚目…）を組にする。分類やレイアウトには依存しない。
   function computeAnglePairs(){
     var pairs = [];
-    if(!report || !report.photos.length) return pairs;
-    var perPage = report.perPage || 4;
-    var cols = GRID_COLS[perPage] || 1;
-    var pageCount = Math.ceil(report.photos.length / perPage);
-
-    for(var gi=0; gi<pageCount; gi++){
-      var pagePhotos = [];
-      for(var i=0; i<perPage; i++){
-        var globalIndex = gi * perPage + i;
-        var photo = report.photos[globalIndex];
-        if(!photo) continue;
-        pagePhotos.push({ photo: photo, index: globalIndex, col: i % cols, row: Math.floor(i / cols) });
-      }
-
-      if(cols >= 2){
-        for(var c=0; c<cols; c++){
-          var colItems = pagePhotos.filter(function(p){ return p.col === c; })
-            .sort(function(a,b){ return a.row - b.row; });
-          for(var k=0; k<colItems.length - 1; k++){
-            var top = colItems[k], bottom = colItems[k+1];
-            if(isAngleCheckPair(top.photo, bottom.photo)){
-              pairs.push({ before: top.photo, beforeIndex: top.index, after: bottom.photo, afterIndex: bottom.index });
-            }
-          }
-        }
-      } else {
-        var befores = pagePhotos.filter(function(p){ return p.photo.category === "作業前"; });
-        var afters = pagePhotos.filter(function(p){ return p.photo.category === "作業後"; });
-        var n = Math.min(befores.length, afters.length);
-        for(var j=0; j<n; j++){
-          var b = befores[j], a = afters[j];
-          if(isAngleCheckPair(b.photo, a.photo)){
-            pairs.push({ before: b.photo, beforeIndex: b.index, after: a.photo, afterIndex: a.index });
-          }
-        }
+    if(!report) return pairs;
+    var list = report.photos;
+    for(var i = 0; i + 1 < list.length; i += 2){
+      if(photoHasImage(list[i]) && photoHasImage(list[i+1])){
+        pairs.push({ before: list[i], beforeIndex: i, after: list[i+1], afterIndex: i+1 });
       }
     }
     return pairs;
