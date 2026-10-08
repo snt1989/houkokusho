@@ -1,0 +1,4 @@
+node_modules/
+www/
+# Android / iOS のネイティブプロジェクト（native/android, native/ios）は、
+# 初回に `npx cap add` で生成したあとリポジトリに含めて構いません。

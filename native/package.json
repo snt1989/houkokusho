@@ -1,0 +1,12 @@
+{
+  "name": "houkokusho-native",
+  "private": true,
+  "version": "1.0.0",
+  "description": "写真報告書作成アプリ（iOS / Android）のビルド用プロジェクト",
+  "scripts": {
+    "prepare:www": "node scripts/build-www.js",
+    "sync": "node scripts/build-www.js && npx cap sync",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios"
+  }
+}

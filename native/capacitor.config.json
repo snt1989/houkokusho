@@ -1,0 +1,11 @@
+{
+  "appId": "jp.sanohltd.houkokusho",
+  "appName": "写真報告書",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}

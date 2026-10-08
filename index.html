@@ -3572,6 +3572,30 @@
     });
   }
 
+  // ストア公開用のネイティブアプリ（Capacitor）の中で動いているか
+  function isNativeApp(){
+    try{ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+    catch(e){ return false; }
+  }
+
+  // ネイティブアプリでは <a download> が使えないため、ファイルを一時保存して端末の共有画面
+  // （「ファイルに保存」「メール」「LINE」など）を開く。プラグイン未導入のときは reject する。
+  function nativeShareFiles(files, title, text){
+    var P = window.Capacitor && window.Capacitor.Plugins;
+    if(!P || !P.Filesystem || !P.Share) return Promise.reject(new Error("native-plugin-missing"));
+    var uris = [];
+    var chain = Promise.resolve();
+    files.forEach(function(f){
+      chain = chain.then(function(){ return blobToBase64(f.blob); }).then(function(b64){
+        return P.Filesystem.writeFile({ path: f.filename, data: b64, directory: "CACHE" });
+      }).then(function(r){ uris.push(r.uri); });
+    });
+    return chain.then(function(){
+      return P.Share.share({ title: title || "", text: text || "", files: uris, dialogTitle: "書き出したファイルを保存・共有" });
+    });
+  }
+  function isShareCancel(err){ return !!(err && /cancel/i.test(String(err.message || err))); }
+
   function saveBlobViaBrowser(blob, filename){
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
@@ -3637,6 +3661,13 @@
     var cap = (window.claude && window.claude.use) ? window.claude.use("downloads") : null;
     return Promise.resolve(cap).then(function(downloads){
       if(!downloads){
+        if(isNativeApp()){
+          return nativeShareFiles([file], file.filename).then(function(){ return { status: "shared" }; }, function(err){
+            if(isShareCancel(err)) return { status: "cancelled" };
+            saveBlobViaBrowser(file.blob, file.filename);   // プラグインが無いときの最後の手段
+            return { status: "downloaded" };
+          });
+        }
         saveBlobViaBrowser(file.blob, file.filename);
         return { status: "downloaded" };
       }
@@ -3664,6 +3695,7 @@
       var st = result && result.status;
       if(st === "delivered") setStatus(what + "を送信しました", "ok");
       else if(st === "downloaded") setStatus(what + "をダウンロードしました", "ok");
+      else if(st === "shared") setStatus(what + "を保存・共有しました", "ok");
       else if(st === "saved") setStatus(what + "を保存しました", "ok");
     }).catch(function(err){
       elExportBtn.disabled = false; elExportImgBtn.disabled = false;
@@ -3708,7 +3740,14 @@
           return mcpCap.callTool("Gmail", "send_message", { to: [to], subject: subject, body: lines.join("\n"), attachments: atts });
         }).then(function(){ return "sent"; });
       }
-      // スマホなど：共有画面からメールアプリに添付して送る
+      // ネイティブアプリ：端末の共有画面からメールアプリに添付して送る
+      if(isNativeApp()){
+        return nativeShareFiles(files, subject, lines.join("\n")).then(function(){ return "shared"; }, function(err){
+          if(isShareCancel(err)) return "cancelled";
+          return viaMailto(files);
+        });
+      }
+      // スマホのブラウザなど：共有画面からメールアプリに添付して送る
       var fileObjs = [];
       try{ fileObjs = files.map(function(f){ return new File([f.blob], f.filename, { type: f.mime }); }); }catch(e){}
       if(fileObjs.length && navigator.canShare && navigator.share && navigator.canShare({ files: fileObjs })){
@@ -4322,7 +4361,7 @@
   // ---------- ホーム画面に追加できるアプリ（PWA） ----------
   // Service Worker を登録する。Claudeのアプリ内など対応していない環境では何もしない。
   try{
-    if("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")){
+    if(!isNativeApp() && "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")){
       window.addEventListener("load", function(){
         navigator.serviceWorker.register("/sw.js").catch(function(){});
       });
