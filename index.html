@@ -1,3 +1,6 @@
+<!doctype html>
+<html lang="ja">
+<head>
 <title>写真報告書作成アプリ</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -798,6 +801,8 @@
     .ph-title-block h3{font-size:1.15em;}
   }
 </style>
+</head>
+<body>
 
 <div class="wrap">
   <div class="topbar">
@@ -2797,7 +2802,9 @@
 
   elPageIncBtn.addEventListener("click", function(){
     if(!report) return;
-    report.minPages = (report.minPages || 0) + 1;
+    // いま表示されているページ数（写真に必要な数と、追加した空ページ数の大きいほう）に1ページ足す
+    var needed = report.photos.length ? Math.ceil(report.photos.length / (report.perPage || 4)) : 0;
+    report.minPages = Math.max(needed, report.minPages || 0) + 1;
     touch();
     renderPages();
     persistDb();
@@ -3752,6 +3759,36 @@
     return PDF_SIZE_PRESETS[key] || PDF_SIZE_PRESETS.standard;
   }
 
+  // 書き出し用の html2canvas の設定（PDF・写真で共通）。
+  // ・windowWidth：端末の画面幅に関係なく、パソコン幅のレイアウトで撮影する。
+  //   （スマホでは表示幅が狭く解像度が落ちる／「編集」タブではプレビューが非表示で撮影できない、を防ぐ）
+  // ・ignoreElements / onclone：黒板の「×」「±」ボタン、空き枠の「写真を追加」、
+  //   空のコメント欄の入力案内など、編集用の表示を書き出しに含めない。
+  function exportCaptureOptions(preset){
+    return {
+      scale: preset.scale,
+      backgroundColor: "#FDFCF8",
+      useCORS: true,
+      windowWidth: 1280,
+      windowHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+      ignoreElements: function(el){
+        var c = el.classList;
+        return !!(c && (c.contains("kb-close") || c.contains("kb-resize") || c.contains("ph-add")));
+      },
+      onclone: function(doc){
+        Array.prototype.forEach.call(doc.querySelectorAll("[data-placeholder]"), function(e){ e.removeAttribute("data-placeholder"); });
+        Array.prototype.forEach.call(doc.querySelectorAll("[contenteditable]"), function(e){ e.removeAttribute("contenteditable"); });
+      }
+    };
+  }
+  // 撮影結果が空（幅・高さが0）でないか確認する
+  function checkCaptured(canvas){
+    if(!canvas || canvas.width < 50 || canvas.height < 50) throw { code: "capture-empty" };
+    return canvas;
+  }
+
   // A4プレビューを1ページずつ画像化してPDFにまとめる。書き出し（ダウンロード）と
   // メール送信の両方から使う共通処理。
   function buildPdfBlob(preset){
@@ -3770,8 +3807,9 @@
     pageEls.forEach(function(pageEl, i){
       var landscape = pageEl.classList.contains("landscape");
       chain = chain.then(function(){
-        return window.html2canvas(pageEl, { scale: preset.scale, backgroundColor: "#FDFCF8", useCORS: true });
+        return window.html2canvas(pageEl, exportCaptureOptions(preset));
       }).then(function(canvas){
+        checkCaptured(canvas);
         var imgData = canvas.toDataURL("image/jpeg", preset.quality);
         if(i > 0) pdf.addPage("a4", landscape ? "landscape" : "portrait");
         var pageW = pdf.internal.pageSize.getWidth();
@@ -3845,8 +3883,9 @@
     var chain = Promise.resolve();
     pageEls.forEach(function(pageEl, i){
       chain = chain.then(function(){
-        return window.html2canvas(pageEl, { scale: preset.scale, backgroundColor: "#FDFCF8", useCORS: true });
+        return window.html2canvas(pageEl, exportCaptureOptions(preset));
       }).then(function(canvas){
+        checkCaptured(canvas);
         return new Promise(function(resolve, reject){
           canvas.toBlob(function(b){
             if(!b){ reject(new Error("toBlob-failed")); return; }
@@ -3904,6 +3943,7 @@
     if(code === "declined") return "";
     if(code === "no-pages") return "書き出すページがありません";
     if(code === "lib-missing") return "書き出し機能の読み込みに失敗しました。再読み込みしてください。";
+    if(code === "capture-empty") return "ページの画像化に失敗しました。「プレビュー」を一度開いてから、もう一度お試しください。";
     if(code === "rate_limited") return "少し待ってからもう一度お試しください";
     return what + "の作成に失敗しました。もう一度お試しください。";
   }
@@ -4593,3 +4633,5 @@
   }catch(e){}
 })();
 </script>
+</body>
+</html>
