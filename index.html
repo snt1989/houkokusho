@@ -328,7 +328,7 @@
 
   /* ===== editor screen ===== */
   .layout{display:grid; grid-template-columns: 300px 1fr; gap:28px; align-items:start;}
-  @media (max-width:880px){ .layout{grid-template-columns:1fr;} }
+  @media (max-width:880px){ .layout{grid-template-columns:minmax(0,1fr);} .panel, .main{min-width:0;} }
 
   .panel{
     position:sticky; top:calc(env(safe-area-inset-top,0px) + 16px);
@@ -650,6 +650,106 @@
   [hidden]{display:none !important;}
   @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 
+
+  /* ===== スマホ向けの見やすさ改善 ===== */
+  .m-tabs{display:none;}
+  @media (max-width:880px){
+    .m-tabs{
+      display:flex; gap:4px; position:sticky; top:0; z-index:20; margin:-4px -4px 14px; padding:8px 4px;
+      background:var(--paper); border-bottom:1px solid var(--line);
+    }
+    .m-tab{
+      flex:1; font:inherit; font-size:14px; font-weight:600; color:var(--ink-soft); background:var(--surface-2);
+      border:1px solid var(--line); border-radius:10px; padding:11px 6px; min-height:44px; cursor:pointer;
+    }
+    .m-tab.active{background:var(--navy-soft); color:var(--navy); border-color:var(--navy);}
+    #viewEditor[data-mtab="preview"] .panel{display:none;}
+    #viewEditor:not([data-mtab="preview"]) .main{display:none;}
+  }
+
+  @media (max-width:640px){
+    body{padding-inline:max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));}
+    .wrap{padding-block:12px 96px;}
+
+    /* 上部：コンパクトに（見出し・操作を1〜2段に収める） */
+    .topbar{gap:10px; padding-block:2px 12px; margin-bottom:14px;}
+    .brand{gap:10px; align-items:center;}
+    .brand .mark{width:30px; height:30px; font-size:14px; border-radius:7px;}
+    .brand h1{font-size:17px;}
+    .brand .sub{display:none;}
+    .topbar-nav{width:100%;}
+    .nav-tab{flex:1; padding:11px 8px; font-size:14px; min-height:44px;}
+    .topbar-actions{width:100%; gap:8px; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;}
+    .topbar-actions::-webkit-scrollbar{display:none;}
+    .topbar-actions .btn, .creator-chip{flex:none;}
+    .topbar-actions .stat{flex:none; font-size:13px;}
+    #backToListBtn{min-height:44px; padding-inline:14px; font-size:14px;}
+
+    /* 新規作成は、親指で押しやすい右下の浮きボタンに（一覧画面のみ） */
+    #newReportBtn{
+      position:fixed; right:calc(16px + env(safe-area-inset-right)); bottom:calc(16px + env(safe-area-inset-bottom));
+      z-index:30; min-height:52px; padding:0 22px; font-size:16px; border-radius:26px;
+      box-shadow:0 6px 18px rgba(224,99,42,.45);
+    }
+    body:not([data-view="list"]) #newReportBtn{display:none;}
+    body[data-view="editor"] #creatorChip,
+    body[data-view="editor"] #switchCreatorBtn,
+    body[data-view="editor"] #refreshBtn{display:none;}
+
+    /* タップしやすい大きさ・iPhoneで入力時に画面が拡大されない文字サイズ(16px) */
+    .btn{min-height:44px; font-size:14px;}
+    .btn-sm{min-height:40px; font-size:13px; padding:8px 12px;}
+    .btn-icon{min-height:40px; min-width:40px;}
+    input, select, textarea, .field input, .field select{font-size:16px !important;}
+    .field input, .field select{padding:11px 12px; min-height:46px;}
+    .field label{font-size:12.5px;}
+    .stepper .btn-icon{width:44px; height:44px; font-size:18px;}
+    .link-btn{padding:8px 0; font-size:13px;}
+    .card{border-radius:14px;}
+
+    /* 報告書一覧：左に画像・右に情報の横並びで、1画面にたくさん見えるように */
+    .report-grid{grid-template-columns:1fr; gap:12px;}
+    .report-card{display:grid; grid-template-columns:104px 1fr; grid-template-areas:"thumb body" "actions actions";}
+    .rc-thumb{grid-area:thumb; aspect-ratio:auto; min-height:104px; border-bottom:none; border-right:1px solid var(--line);}
+    .rc-body{grid-area:body; padding:10px 12px 4px; min-width:0;}
+    .rc-actions{grid-area:actions; padding:8px 12px 12px;}
+    .rc-actions .btn{min-height:44px; font-size:14px;}
+    .rc-edit-btn{min-width:40px; min-height:40px;}
+
+    /* 写真リスト：二重スクロールをやめ、操作ボタンを押しやすく */
+    .photolist{max-height:none; overflow:visible;}
+    .photo-row{grid-template-columns:56px 1fr; padding:10px; gap:10px;}
+    .photo-row img{width:56px; height:56px;}
+    .photo-row .ops{grid-column:1 / -1; justify-content:flex-end; gap:8px;}
+    .photo-row .ops button{width:44px; height:40px; font-size:15px; border-radius:8px;}
+    .photo-row select{font-size:16px !important; padding:8px 8px; min-height:42px; margin-top:6px;}
+    .photo-row .cap{font-size:13.5px;}
+    .photo-row .idx{font-size:11.5px;}
+
+    /* アングル確認・書き出し */
+    .angle-inline-btn{padding:9px 12px; font-size:13px; min-height:40px;}
+    .angle-pair-pick select{min-height:42px; padding:8px 6px;}
+    .angle-pair-pick .angle-pair-remove{min-width:44px; min-height:42px; font-size:16px;}
+    .angle-pair-thumbs img{width:64px; height:64px;}
+    .angle-help summary{padding:13px 14px; font-size:13.5px;}
+    .email-pdf-row{flex-direction:column;}
+    .email-pdf-row input, .email-pdf-row select, .email-pdf-row .btn{width:100%; flex:none; min-height:46px;}
+
+    /* 管理画面・マスタ：タブは横スクロール、行の操作は大きく */
+    .master-subtabs{flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; max-width:100%;}
+    .master-subtabs::-webkit-scrollbar{display:none;}
+    .master-subtab{padding:11px 14px; font-size:14px; flex:none;}
+    .master-row .ops button{min-width:40px; min-height:40px;}
+    .master-add{flex-wrap:wrap;}
+    .master-add input{min-height:46px;}
+    .admin-stats{grid-template-columns:1fr 1fr 1fr;}
+
+    /* プレビュー */
+    .preview-toolbar{margin-bottom:10px;}
+    .pages{gap:16px;}
+    .a4-page{box-shadow:var(--shadow);}
+  }
+
   @media (max-width:520px){
     .a4-page{padding:5% 5.5%;}
     .ph-title-block h3{font-size:1.15em;}
@@ -946,7 +1046,13 @@
   <datalist id="masterEmailList"></datalist>
 
   <!-- ===== editor screen ===== -->
-  <div id="viewEditor" hidden>
+  <div id="viewEditor" hidden data-mtab="edit">
+    <!-- スマホ用：編集 / プレビュー / 書き出し の切り替え（幅が広い画面では表示しない） -->
+    <div class="m-tabs" id="mobileTabs" role="tablist">
+      <button type="button" class="m-tab active" data-mtab="edit" role="tab">✎ 編集</button>
+      <button type="button" class="m-tab" data-mtab="preview" role="tab">🖼 プレビュー</button>
+      <button type="button" class="m-tab" data-mtab="export" role="tab">⬇ 書き出し</button>
+    </div>
     <div class="layout">
       <!-- ===== sidebar ===== -->
       <div class="panel">
@@ -1061,7 +1167,7 @@
           <div class="photolist" id="photoList"></div>
         </section>
 
-        <section class="card">
+        <section class="card" id="exportCard">
           <div class="field pdf-size-field">
             <label for="pdfSizeSelect">ファイルサイズ（PDF・写真）</label>
             <select id="pdfSizeSelect">
@@ -1478,6 +1584,7 @@
   // ---------- navigation ----------
   function switchView(){
     var v = (currentView === "editor" && report) ? "editor" : (currentView === "admin" ? "admin" : "list");
+    document.body.setAttribute("data-view", v);
     elViewList.hidden = v !== "list";
     elViewEditor.hidden = v !== "editor";
     elViewAdmin.hidden = v !== "admin";
@@ -1490,10 +1597,30 @@
       : "";
   }
 
+  // スマホ用：編集 / プレビュー / 書き出し の切り替え
+  function setMobileTab(tab){
+    var view = document.getElementById("viewEditor");
+    var shown = tab === "preview" ? "preview" : "edit";
+    view.setAttribute("data-mtab", shown);
+    Array.prototype.forEach.call(document.querySelectorAll("#mobileTabs .m-tab"), function(b){
+      b.classList.toggle("active", b.getAttribute("data-mtab") === (tab === "export" ? "export" : shown));
+    });
+    if(tab === "export"){
+      var card = document.getElementById("exportCard");
+      if(card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo(0, 0);
+    }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("#mobileTabs .m-tab"), function(b){
+    b.addEventListener("click", function(){ setMobileTab(b.getAttribute("data-mtab")); });
+  });
+
   function openReport(id){
     var r = reportsCache[id];
     if(!r) return;
     report = r;
+    setMobileTab("edit");
     currentView = "editor";
     fillMetaForm();
     renderAll();
