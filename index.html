@@ -750,6 +750,49 @@
     .a4-page{box-shadow:var(--shadow);}
   }
 
+
+  /* ===== スマホ用の下部バー・お知らせ・入力しやすさ ===== */
+  .m-bar, .m-toast{display:none;}
+  .dz-touch{display:none;}
+  .dz-touch small{display:block; margin-top:4px; font-size:11.5px; font-weight:400; color:var(--ink-faint);}
+  .photo-row .cap-input{
+    width:100%; box-sizing:border-box; font:inherit; font-size:12px; color:var(--ink);
+    padding:3px 6px; border-radius:5px; border:1px solid var(--line-strong); background:var(--surface);
+  }
+  .photo-row .cap-input:focus{outline:none; border-color:var(--navy); box-shadow:0 0 0 3px var(--navy-soft);}
+  .photo-row .ops button.del.confirming{background:var(--danger-soft); color:var(--danger); border-color:var(--danger); width:auto; padding:0 10px; font-size:12px; font-weight:700;}
+  @media (hover:none){
+    .dz-pc{display:none;}
+    .dz-touch{display:block; font-size:15px; font-weight:700; color:var(--ink-soft);}
+    .dropzone{padding:26px 12px; border-radius:12px;}
+    .dropzone svg{width:30px; height:30px;}
+  }
+  @media (max-width:880px){
+    #viewEditor .m-bar{
+      display:flex; gap:10px; position:fixed; left:0; right:0; bottom:0; z-index:40;
+      padding:10px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+      background:rgba(255,255,255,.96); border-top:1px solid var(--line); backdrop-filter:blur(8px);
+    }
+    #viewEditor .m-bar .btn{flex:1; min-height:50px; font-size:15px; font-weight:700; border-radius:12px;}
+    body.kbd #viewEditor .m-bar{display:none;}
+    #viewEditor .m-toast{
+      display:block; position:fixed; left:14px; right:14px; bottom:calc(76px + env(safe-area-inset-bottom)); z-index:41;
+      padding:12px 14px; border-radius:12px; font-size:14px; line-height:1.5; color:#fff; background:#22252B;
+      box-shadow:0 8px 24px rgba(0,0,0,.28); text-align:center;
+    }
+    #viewEditor .m-toast.ok{background:var(--ok);}
+    #viewEditor .m-toast.err{background:var(--danger);}
+    #viewEditor .m-toast[hidden]{display:none;}
+    body[data-view="editor"] .wrap{padding-bottom:calc(100px + env(safe-area-inset-bottom));}
+  }
+  @media (max-width:640px){
+    .photo-row .cap-input{font-size:16px; padding:9px 10px; min-height:44px; margin-top:4px; border-radius:8px;}
+    .photo-row .ops button.del.confirming{min-width:96px;}
+    .hint{font-size:12.5px;}
+    .card h2{font-size:15px;}
+    .empty-list{font-size:14px; padding:18px 6px;}
+  }
+
   @media (max-width:520px){
     .a4-page{padding:5% 5.5%;}
     .ph-title-block h3{font-size:1.15em;}
@@ -1131,7 +1174,8 @@
           <h2><span class="n">03</span>写真</h2>
           <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="写真を追加">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2.5M7 9l5-5 5 5M12 4v13"/></svg>
-            クリックまたはドラッグ＆ドロップで写真を追加
+            <span class="dz-pc">クリックまたはドラッグ＆ドロップで写真を追加</span>
+            <span class="dz-touch">タップして写真を追加<small>カメラで撮影・アルバムから選択（複数選択できます）</small></span>
           </div>
           <input type="file" id="fileInput" accept="image/*" multiple>
           <div class="bulk-kokuban-row">
@@ -1200,6 +1244,13 @@
         </div>
         <div class="pages" id="pages"></div>
       </div>
+    </div>
+
+    <!-- スマホ用：いつでも押せる下部バー（写真を追加 / PDFを書き出す）と、結果のお知らせ -->
+    <div class="m-toast" id="mobileToast" role="status" aria-live="polite" hidden></div>
+    <div class="m-bar" id="mobileBar">
+      <button type="button" class="btn btn-ghost" id="mobileAddBtn">＋ 写真を追加</button>
+      <button type="button" class="btn btn-primary" id="mobilePdfBtn">PDFを書き出す</button>
     </div>
   </div>
 </div>
@@ -1579,6 +1630,22 @@
   function setStatus(text, kind){
     elStatus.textContent = text || "";
     elStatus.className = "status-line" + (kind ? " " + kind : "");
+    showMobileToast(text, kind);
+  }
+
+  // スマホでは書き出し欄が画面外にあることが多いので、結果を画面下にお知らせとして出す
+  var elMobileToast = document.getElementById("mobileToast"), mobileToastTimer = null;
+  function showMobileToast(text, kind){
+    if(!elMobileToast) return;
+    clearTimeout(mobileToastTimer);
+    var isMobile = window.matchMedia && window.matchMedia("(max-width:880px)").matches;
+    if(!text || !isMobile){ elMobileToast.hidden = true; return; }
+    elMobileToast.textContent = text;
+    elMobileToast.className = "m-toast" + (kind ? " " + kind : "");
+    elMobileToast.hidden = false;
+    if(kind === "ok" || kind === "err"){
+      mobileToastTimer = setTimeout(function(){ elMobileToast.hidden = true; }, kind === "err" ? 6000 : 3500);
+    }
   }
 
   // ---------- navigation ----------
@@ -1596,6 +1663,16 @@
       ? "写真 " + report.photos.length + " 枚・" + Math.max(1, Math.ceil(report.photos.length / report.perPage)) + " ページ"
       : "";
   }
+
+  // スマホ用の下部バー
+  document.getElementById("mobileAddBtn").addEventListener("click", function(){ elFileInput.click(); });
+  document.getElementById("mobilePdfBtn").addEventListener("click", function(){ elExportBtn.click(); });
+  // 文字入力中は、キーボードに重ならないよう下部バーを隠す
+  document.addEventListener("focusin", function(e){
+    var t = e.target;
+    if(t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) document.body.classList.add("kbd");
+  });
+  document.addEventListener("focusout", function(){ document.body.classList.remove("kbd"); });
 
   // スマホ用：編集 / プレビュー / 書き出し の切り替え
   function setMobileTab(tab){
@@ -2916,9 +2993,21 @@
       var idx = document.createElement("div");
       idx.className = "idx";
       idx.textContent = String(i+1).padStart(2,"0") + " 枚目";
-      var cap = document.createElement("div");
-      cap.className = "cap";
-      cap.textContent = photo.caption || "（コメント未入力）";
+      // コメントは、ここでも直接入力できる（プレビュー内の小さい枠を触らなくてよいように）
+      var cap = document.createElement("input");
+      cap.type = "text";
+      cap.className = "cap-input";
+      cap.placeholder = "コメント（撮影状況）を入力";
+      cap.value = photo.caption || "";
+      cap.setAttribute("enterkeyhint", "done");
+      cap.addEventListener("input", function(){
+        photo.caption = cap.value;
+        touch();
+        var prev = elPages.querySelectorAll(".ph-cell:not(.placeholder) .cell-caption")[i];
+        if(prev && prev !== document.activeElement) prev.textContent = cap.value;
+        persistDb();
+      });
+      cap.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); cap.blur(); } });
       var sel = document.createElement("select");
       var catOptions = masters.categories.slice();
       if(photo.category && catOptions.indexOf(photo.category) === -1) catOptions.push(photo.category);
@@ -2962,7 +3051,15 @@
         touch(); renderAll(); persistDb();
       });
       var del = document.createElement("button"); del.textContent = "✕"; del.title = "削除"; del.className = "del";
+      var delTimer = null;
       del.addEventListener("click", function(){
+        // 押し間違い防止：1回目は確認表示、もう一度押すと削除する
+        if(!del.classList.contains("confirming")){
+          del.classList.add("confirming"); del.textContent = "削除する？";
+          delTimer = setTimeout(function(){ del.classList.remove("confirming"); del.textContent = "✕"; }, 3000);
+          return;
+        }
+        clearTimeout(delTimer);
         report.photos.splice(i,1);
         touch(); renderAll(); switchView(); persistDb();
       });
@@ -3581,8 +3678,8 @@
     if(idx === -1) return;
     var row = elPhotoList.children[idx];
     if(row){
-      var capEl = row.querySelector(".cap");
-      if(capEl) capEl.textContent = text || "（コメント未入力）";
+      var capEl = row.querySelector(".cap-input");
+      if(capEl && capEl !== document.activeElement) capEl.value = text || "";
     }
   }
 
