@@ -1226,6 +1226,7 @@
             </select>
           </div>
           <button class="btn btn-primary btn-block" id="exportBtn">PDFを書き出す</button>
+          <button class="btn btn-ghost btn-block" id="saveGenbaBtn" style="margin-top:8px;" hidden>現場管理アプリの案件に保存</button>
           <button class="btn btn-ghost btn-block" id="exportImgBtn" style="margin-top:8px;">写真で書き出す（JPEG）</button>
           <div class="email-pdf-row" id="emailPdfRow">
             <input type="email" id="emailPdfTo" placeholder="送り先メールアドレス" list="masterEmailList">
@@ -1299,6 +1300,24 @@
   function firebaseConfigured(){
     return !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
   }
+
+  // ---- 現場管理アプリとの連携：案件から開いたとき（?gk=チケット）だけ、PDFをその案件の「写真・ファイル」へ保存できる ----
+  // 保存先APIは固定（他のサイトへ送られないように、URLパラメータでは受け取らない）
+  var GENBA_API = "https://genbakanri-app.vercel.app/api/config";
+  var GENBA_TICKET_KEY = "genbaTicket";
+  var genbaTicket = (function(){
+    try{
+      var q = new URLSearchParams(location.search), gk = q.get("gk");
+      if(gk){
+        localStorage.setItem(GENBA_TICKET_KEY, gk);
+        q.delete("gk"); history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q.toString() : "") + location.hash);
+      }
+      var t = localStorage.getItem(GENBA_TICKET_KEY); if(!t) return null;
+      var p = JSON.parse(decodeURIComponent(escape(atob(t.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")))));
+      if(!p || p.k !== "r" || !p.exp || Date.now() > p.exp){ localStorage.removeItem(GENBA_TICKET_KEY); return null; }
+      return {ticket: t, projectName: p.pn || "", customer: p.c || "", address: p.ad || "", member: p.n || ""};
+    }catch(e){ return null; }
+  })();
 
   function uid(prefix){ return (prefix||"r") + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
 
@@ -1421,7 +1440,7 @@
   function blankReport(){
     return {
       id: null,
-      meta: { title:"", siteName:"", address:"", date: todayStr, photographerLastName:"", photographerFirstName:"", company:"" },
+      meta: { title: genbaTicket ? genbaTicket.customer : "", siteName: genbaTicket ? genbaTicket.projectName : "", address: genbaTicket ? genbaTicket.address : "", date: todayStr, photographerLastName:"", photographerFirstName:"", company:"" },
       perPage: 4,
       layout: "",
       anglePairs: null,   // null = 写真の並び順で自動（2枚ずつ） / 配列 = 選んだ組 [{a: 写真ID, b: 写真ID}]
@@ -3937,6 +3956,44 @@
       return downloads.save({ filename: file.filename, data: file.blob });
     });
   }
+
+  // ---- 現場管理アプリの案件へ保存（PDFを約600KBずつ送る） ----
+  function blobPartB64(blob){
+    return new Promise(function(ok, ng){ var r = new FileReader(); r.onload = function(){ ok(String(r.result).split(",")[1] || ""); }; r.onerror = function(){ ng(r.error); }; r.readAsDataURL(blob); });
+  }
+  function genbaPost(body, tries){
+    return fetch(GENBA_API, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if(!r.ok || j.error){ var e = new Error(j.error || ("サーバーエラー（" + r.status + "）")); e.fatal = (r.status >= 400 && r.status < 500); throw e; } return j; }); })
+      .catch(function(e){ if(e.fatal || !(tries > 0)) throw e; return genbaPost(body, tries - 1); });
+  }
+  function saveToGenba(){
+    if(!genbaTicket) return;
+    var btn = document.getElementById("saveGenbaBtn"), CH = 600000;
+    btn.disabled = true; setStatus("PDFを作成しています…（写真の枚数により時間がかかります）");
+    buildPdfBlob(currentPdfSizePreset()).then(function(blob){
+      var total = Math.ceil(blob.size / CH);
+      if(total > 33) throw new Error("PDFが大きすぎます（約20MBまで）。ファイルサイズを「小」にしてください");
+      var upId = "r" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      var i = 0;
+      var step = function(){
+        if(i >= total) return genbaPost({action: "report-finish", ticket: genbaTicket.ticket, uploadId: upId, total: total, filename: pdfFileName(), size: blob.size}, 1);
+        setStatus("現場管理アプリへ送信中… " + (i + 1) + " / " + total);
+        return blobPartB64(blob.slice(i * CH, (i + 1) * CH)).then(function(d){
+          return genbaPost({action: "report-chunk", ticket: genbaTicket.ticket, uploadId: upId, total: total, i: i, data: d}, 2);
+        }).then(function(){ i++; return step(); });
+      };
+      return step();
+    }).then(function(){
+      btn.disabled = false; setStatus("現場管理アプリの案件「" + genbaTicket.projectName + "」の写真・ファイルに保存しました", "ok");
+    }).catch(function(err){
+      btn.disabled = false; setStatus("保存に失敗しました：" + ((err && err.message) || "不明なエラー"), "err");
+    });
+  }
+  (function(){
+    var btn = document.getElementById("saveGenbaBtn"); if(!btn) return;
+    if(genbaTicket){ btn.hidden = false; btn.textContent = "現場管理アプリの案件「" + (genbaTicket.projectName || "") + "」に保存"; }
+    btn.addEventListener("click", function(){ if(needPhotos()) saveToGenba(); });
+  })();
 
   function exportErrorMessage(err, what){
     var code = err && err.code;
