@@ -3,7 +3,7 @@
 //   → 更新を公開したのに古い画面が出続ける、という事態を避ける
 // ・アイコンなどの静的ファイルと、外部の部品（PDF作成ライブラリ・フォント）は保存して高速化
 // ・Firebase など、データの読み書きの通信には一切関与しない
-var CACHE = "houkokusho-v1";
+var CACHE = "houkokusho-v2";
 var SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/favicon-32.png"];
 var RUNTIME_HOSTS = ["cdnjs.cloudflare.com", "fonts.googleapis.com", "fonts.gstatic.com"];
 

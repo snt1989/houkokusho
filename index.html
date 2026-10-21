@@ -1226,6 +1226,7 @@
             </select>
           </div>
           <button class="btn btn-primary btn-block" id="exportBtn">PDFを書き出す</button>
+          <div id="genbaProjBar" hidden style="margin-top:8px;padding:8px 10px;border:1px solid var(--line,#ddd);border-radius:8px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;min-width:0;word-break:break-all">現場管理アプリの案件：<b id="genbaProjName"></b></span><button class="btn btn-ghost" id="genbaPickBtn" type="button" style="padding:4px 10px;font-size:12px">案件を選ぶ</button></div>
           <button class="btn btn-ghost btn-block" id="saveGenbaBtn" style="margin-top:8px;" hidden>現場管理アプリの案件に保存</button>
           <button class="btn btn-ghost btn-block" id="exportImgBtn" style="margin-top:8px;">写真で書き出す（JPEG）</button>
           <div class="email-pdf-row" id="emailPdfRow">
@@ -1305,6 +1306,14 @@
   // 保存先APIは固定（他のサイトへ送られないように、URLパラメータでは受け取らない）
   var GENBA_API = "https://genbakanri-app.vercel.app/api/config";
   var GENBA_TICKET_KEY = "genbaTicket";
+  function parseGenbaTicket(t){
+    try{
+      if(!t) return null;
+      var p = JSON.parse(decodeURIComponent(escape(atob(t.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")))));
+      if(!p || p.k !== "r" || !p.exp || Date.now() > p.exp) return null;
+      return {ticket: t, projectId: p.p || "", projectName: p.pn || "", customer: p.c || "", address: p.ad || "", member: p.n || ""};
+    }catch(e){ return null; }
+  }
   var genbaTicket = (function(){
     try{
       var q = new URLSearchParams(location.search), gk = q.get("gk");
@@ -1313,9 +1322,9 @@
         q.delete("gk"); history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q.toString() : "") + location.hash);
       }
       var t = localStorage.getItem(GENBA_TICKET_KEY); if(!t) return null;
-      var p = JSON.parse(decodeURIComponent(escape(atob(t.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")))));
-      if(!p || p.k !== "r" || !p.exp || Date.now() > p.exp){ localStorage.removeItem(GENBA_TICKET_KEY); return null; }
-      return {ticket: t, projectName: p.pn || "", customer: p.c || "", address: p.ad || "", member: p.n || ""};
+      var g = parseGenbaTicket(t);
+      if(!g) localStorage.removeItem(GENBA_TICKET_KEY);
+      return g;
     }catch(e){ return null; }
   })();
 
@@ -1813,6 +1822,11 @@
     if(currentCreator){
       r.meta.photographerLastName = currentCreator.last || "";
       r.meta.photographerFirstName = currentCreator.first || "";
+    } else if(genbaTicket && genbaTicket.member){
+      // 現場管理アプリから開いたときは、撮影者に開いた人の名前を入れる
+      var gp = String(genbaTicket.member).trim().split(/[\s　]+/);
+      r.meta.photographerLastName = gp[0] || "";
+      r.meta.photographerFirstName = gp.slice(1).join(" ");
     } else {
       r.meta.photographerLastName = settings.defaultPhotographerLastName || "";
       r.meta.photographerFirstName = settings.defaultPhotographerFirstName || "";
@@ -3989,10 +4003,62 @@
       btn.disabled = false; setStatus("保存に失敗しました：" + ((err && err.message) || "不明なエラー"), "err");
     });
   }
+  // ---- 案件を選ぶ（現場管理アプリの案件を検索して切り替える） ----
+  function genbaRefreshBar(){
+    var btn = document.getElementById("saveGenbaBtn"), bar = document.getElementById("genbaProjBar");
+    if(!btn || !bar) return;
+    if(!genbaTicket){ btn.hidden = true; bar.hidden = true; return; }
+    bar.hidden = false; bar.style.display = "flex";
+    document.getElementById("genbaProjName").textContent = genbaTicket.projectName || "（未選択）";
+    document.getElementById("genbaPickBtn").textContent = genbaTicket.projectId ? "案件を変更" : "案件を選ぶ";
+    btn.hidden = false;
+    btn.textContent = genbaTicket.projectId ? ("現場管理アプリの案件「" + (genbaTicket.projectName || "") + "」に保存") : "案件を選んで保存";
+  }
+  function genbaApplyProject(proj, newTicket){
+    try{ localStorage.setItem(GENBA_TICKET_KEY, newTicket); }catch(e){}
+    var g = parseGenbaTicket(newTicket); if(g) genbaTicket = g;
+    if(report){
+      report.meta.title = proj.customer || report.meta.title || "";
+      report.meta.siteName = proj.name || "";
+      report.meta.address = proj.address || "";
+      try{ fillMetaForm(); persistDb(); renderAll(); }catch(e){}
+    }
+    genbaRefreshBar();
+  }
+  function genbaPickProject(){
+    if(!genbaTicket) return;
+    var ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center";
+    ov.innerHTML = '<div style="background:#fff;width:100%;max-width:560px;max-height:82vh;border-radius:14px 14px 0 0;display:flex;flex-direction:column;padding:14px 14px 18px;box-sizing:border-box"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px"><b style="font-size:15px">案件を選ぶ</b><button type="button" id="gpClose" class="btn btn-ghost" style="padding:4px 10px">閉じる</button></div><input id="gpQ" type="text" placeholder="案件名・お客様・住所で検索" autocomplete="off" style="font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%;box-sizing:border-box"><div id="gpList" style="overflow:auto;margin-top:8px;flex:1;min-height:120px"></div></div>';
+    document.body.appendChild(ov);
+    var list = ov.querySelector("#gpList"), q = ov.querySelector("#gpQ"), timer = null, seq = 0;
+    var close = function(){ ov.remove(); };
+    ov.querySelector("#gpClose").addEventListener("click", close);
+    ov.addEventListener("click", function(e){ if(e.target === ov) close(); });
+    var esc2 = function(v){ return String(v == null ? "" : v).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); };
+    var load = function(){
+      var my = ++seq; list.innerHTML = '<div style="padding:14px;color:#777;font-size:13px">読み込み中…</div>';
+      genbaPost({action: "report-projects", ticket: genbaTicket.ticket, q: q.value}, 1).then(function(j){
+        if(my !== seq) return;
+        var ps = j.projects || [];
+        if(!ps.length){ list.innerHTML = '<div style="padding:14px;color:#777;font-size:13px">該当する案件がありません（清算済・失注の案件は表示されません）</div>'; return; }
+        list.innerHTML = ps.map(function(p, i){ return '<button type="button" data-i="' + i + '" style="display:block;width:100%;text-align:left;padding:10px 8px;border:none;border-top:1px solid #eee;background:none;cursor:pointer;font-family:inherit"><div style="font-weight:700;font-size:14px">' + esc2(p.name) + '</div><div style="font-size:12px;color:#666">' + esc2([p.customer, p.status].filter(Boolean).join(" ／ ")) + (p.address ? '<br>' + esc2(p.address) : '') + '</div></button>'; }).join("") + (j.total > ps.length ? '<div style="padding:8px;color:#777;font-size:12px">ほか ' + (j.total - ps.length) + '件（検索で絞り込んでください）</div>' : "");
+        Array.prototype.forEach.call(list.querySelectorAll("button[data-i]"), function(b){
+          b.addEventListener("click", function(){
+            var p = ps[Number(b.getAttribute("data-i"))]; b.disabled = true; b.style.opacity = ".6";
+            genbaPost({action: "report-switch", ticket: genbaTicket.ticket, projectId: p.id}, 1).then(function(r){ genbaApplyProject(r.project || p, r.ticket); close(); setStatus("案件「" + (p.name || "") + "」に切り替えました（現場名・お客様・住所を入れました）", "ok"); }, function(e){ b.disabled = false; b.style.opacity = ""; setStatus("切り替えに失敗しました：" + ((e && e.message) || ""), "err"); });
+          });
+        });
+      }, function(e){ if(my !== seq) return; list.innerHTML = '<div style="padding:14px;color:#c0392b;font-size:13px">読み込めませんでした：' + esc2((e && e.message) || "") + '</div>'; });
+    };
+    q.addEventListener("input", function(){ clearTimeout(timer); timer = setTimeout(load, 300); });
+    load();
+  }
   (function(){
     var btn = document.getElementById("saveGenbaBtn"); if(!btn) return;
-    if(genbaTicket){ btn.hidden = false; btn.textContent = "現場管理アプリの案件「" + (genbaTicket.projectName || "") + "」に保存"; }
-    btn.addEventListener("click", function(){ if(needPhotos()) saveToGenba(); });
+    genbaRefreshBar();
+    var pk = document.getElementById("genbaPickBtn"); if(pk) pk.addEventListener("click", genbaPickProject);
+    btn.addEventListener("click", function(){ if(!genbaTicket) return; if(!genbaTicket.projectId){ genbaPickProject(); return; } if(needPhotos()) saveToGenba(); });
   })();
 
   function exportErrorMessage(err, what){
