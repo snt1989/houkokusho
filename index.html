@@ -4473,10 +4473,32 @@
     });
   }
 
+  // 現場管理アプリから開かれたとき（署名つきチケット）は、サーバーで確認できれば合い言葉・作成者ログインを省く
+  var genbaVerifyP = null;
+  function genbaVerify(){
+    if(!genbaTicket) return Promise.resolve(null);
+    if(!genbaVerifyP){
+      genbaVerifyP = Promise.race([
+        genbaPost({action: "report-verify", ticket: genbaTicket.ticket}, 0).then(function(j){ return (j && j.ok) ? String(j.name || "") : null; }),
+        new Promise(function(ok){ setTimeout(function(){ ok(null); }, 6000); })
+      ]).catch(function(){ return null; });
+    }
+    return genbaVerifyP;
+  }
   function showAccessGate(onSuccess){
     try{
       if(localStorage.getItem(ACCESS_GATE_STORAGE_KEY) === "1"){ onSuccess(); return; }
     }catch(e){}
+    if(genbaTicket){
+      genbaVerify().then(function(name){
+        if(name){ try{ localStorage.setItem(ACCESS_GATE_STORAGE_KEY, "1"); }catch(e){} onSuccess(); }
+        else showAccessGateForm(onSuccess);
+      });
+      return;
+    }
+    showAccessGateForm(onSuccess);
+  }
+  function showAccessGateForm(onSuccess){
 
     var overlay = document.createElement("div");
     overlay.className = "access-gate";
@@ -4627,6 +4649,21 @@
 
   // マスタ読み込み後に呼ぶ。記憶済みの作成者がマスタに残っていればそのままログイン、無ければ選択画面を出す。
   function ensureCreatorLogin(){
+    if(genbaTicket && genbaTicket.member){
+      // 現場管理アプリから開いたとき：同じ名前の作成者が作成者マスタにいれば、そのまま作成者としてログインする
+      return genbaVerify().then(function(name){
+        if(name){
+          var parts = name.trim().split(/[\s　]+/), last = parts[0] || "", first = parts.slice(1).join(" ");
+          var hit = masters.photographers.filter(function(p){ return (p.last + p.first).replace(/[\s　]+/g, "") === (last + first).replace(/[\s　]+/g, ""); })[0];
+          if(hit){ setCurrentCreator({last: hit.last, first: hit.first}); return; }
+          if(!masters.photographers.length){ updateCreatorUi(); return; }
+        }
+        ensureCreatorLoginManual();
+      });
+    }
+    ensureCreatorLoginManual();
+  }
+  function ensureCreatorLoginManual(){
     if(currentCreator && (creatorInMasters(currentCreator) || !masters.photographers.length)){
       updateCreatorUi();
       return;
