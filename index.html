@@ -514,6 +514,10 @@
     position:relative;
   }
   .a4-page.landscape{aspect-ratio:297/210;}
+  .page-tools{width:100%; max-width:720px; display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:-14px;}
+  .page-tools .pt-no{font-size:12.5px; font-weight:600; color:var(--ink-soft);}
+  .page-tools label{display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink-soft);}
+  .page-tools select{font-size:13px; padding:5px 8px; max-width:200px;}
   .ph-header{
     display:flex; justify-content:space-between; align-items:flex-end; gap:12px;
     border-bottom:2px solid #1F3654; padding-bottom:1.2%;
@@ -1154,7 +1158,8 @@
         <section class="card">
           <h2><span class="n">02</span>レイアウト</h2>
           <div class="field">
-            <label for="perpage">1ページあたりの写真枚数</label>
+            <label for="perpage">全ページのレイアウト</label>
+            <div class="hint" style="margin:-2px 0 6px;">ここで選ぶと全ページが同じになります。ページごとに変えるときは、プレビューの各ページ上のメニューで選びます。</div>
             <select id="perpage">
               <option value="1">1枚（全面）</option>
               <option value="v1">縦1枚（A4縦）</option>
@@ -1339,6 +1344,32 @@
     { key: "3",  label: "3枚（3段）" },
     { key: "4",  label: "4枚（2×2・標準）" }
   ];
+  // ページごとのレイアウト：report.pageLayouts[i] が空なら、報告書全体のレイアウトを使う。
+  function layoutInfo(key){
+    if(key === "v1") return { per: 1, landscape: false };
+    if(key === "h1") return { per: 1, landscape: true };
+    var n = parseInt(key, 10);
+    if([1,2,3,4].indexOf(n) === -1) n = 4;
+    return { per: n, landscape: false };
+  }
+  function pageLayoutKey(r, i){
+    var k = r.pageLayouts && r.pageLayouts[i];
+    return k || r.layout || String(r.perPage || 4);
+  }
+  // 各ページの {key, per, landscape, start}。写真は前のページから順に詰める。
+  function pageSlots(r){
+    var slots = [], used = 0, i = 0, n = r.photos.length, minP = r.minPages || 0;
+    while(used < n || i < minP){
+      var key = pageLayoutKey(r, i), info = layoutInfo(key);
+      slots.push({ key: key, per: info.per, landscape: info.landscape, start: used });
+      used += info.per; i++;
+    }
+    return slots;
+  }
+  function photoPageCount(r){
+    return pageSlots(r).filter(function(sl){ return sl.start < r.photos.length; }).length;
+  }
+
   function sanitizeLayouts(list){
     var out = [], seen = {};
     (Array.isArray(list) ? list : []).forEach(function(it){
@@ -1451,7 +1482,7 @@
       id: null,
       meta: { title: genbaTicket ? genbaTicket.customer : "", siteName: genbaTicket ? genbaTicket.projectName : "", address: genbaTicket ? genbaTicket.address : "", date: todayStr, photographerLastName:"", photographerFirstName:"", company:"" },
       perPage: 4,
-      layout: "",
+      layout: "", pageLayouts: [],
       anglePairs: null,   // null = 写真の並び順で自動（2枚ずつ） / 配列 = 選んだ組 [{a: 写真ID, b: 写真ID}]
       angleChecks: {},    // 判定結果 { "写真ID|写真ID": { percent, note } }
       minPages: 0,
@@ -1548,6 +1579,9 @@
     // layout: "" = 従来どおり（perPageで決まる） / "v1" = 縦1枚（A4縦） / "h1" = 横1枚（A4横）
     out.layout = (r.layout === "v1" || r.layout === "h1") ? r.layout : "";
     if(out.layout) out.perPage = 1;
+    out.pageLayouts = Array.isArray(r.pageLayouts)
+      ? r.pageLayouts.slice(0, 300).map(function(k){ return LAYOUT_DEFS.some(function(d){ return d.key === k; }) ? k : ""; })
+      : [];
     // アングル確認：選んだ組と判定結果（存在しない写真を指すものは捨てる）
     var photoIds = {};
     out.photos.forEach(function(ph){ photoIds[ph.id] = true; });
@@ -1693,7 +1727,7 @@
     elNavListBtn.classList.toggle("active", v === "list");
     elNavAdminBtn.classList.toggle("active", v === "admin");
     elTopStat.textContent = v === "editor"
-      ? "写真 " + report.photos.length + " 枚・" + Math.max(1, Math.ceil(report.photos.length / report.perPage)) + " ページ"
+      ? "写真 " + report.photos.length + " 枚・" + Math.max(1, pageSlots(report).length) + " ページ"
       : "";
   }
 
@@ -1875,7 +1909,7 @@
   // ---------- report list (management) screen ----------
   function reportStats(r){
     var photos = r.photos.length;
-    var pages = photos ? Math.ceil(photos / r.perPage) : 0;
+    var pages = pageSlots(r).length;
     return { photos: photos, pages: pages };
   }
 
@@ -2828,6 +2862,7 @@
     var lv = elPerPage.value;
     if(lv === "v1" || lv === "h1"){ report.layout = lv; report.perPage = 1; }
     else { report.layout = ""; report.perPage = parseInt(lv, 10); }
+    report.pageLayouts = [];
     touch();
     renderPages();
     persistDb();
@@ -2836,16 +2871,16 @@
   elPageIncBtn.addEventListener("click", function(){
     if(!report) return;
     // いま表示されているページ数（写真に必要な数と、追加した空ページ数の大きいほう）に1ページ足す
-    var needed = report.photos.length ? Math.ceil(report.photos.length / (report.perPage || 4)) : 0;
-    report.minPages = Math.max(needed, report.minPages || 0) + 1;
+    report.minPages = pageSlots(report).length + 1;
     touch();
     renderPages();
     persistDb();
   });
   elPageDecBtn.addEventListener("click", function(){
     if(!report) return;
-    var neededByPhotos = report.photos.length ? Math.ceil(report.photos.length / report.perPage) : 0;
-    report.minPages = Math.max(neededByPhotos, (report.minPages || 0) - 1);
+    var curTotal = pageSlots(report).length;
+    report.minPages = Math.max(photoPageCount(report), curTotal - 1);
+    if(report.pageLayouts) report.pageLayouts = report.pageLayouts.slice(0, report.minPages);
     touch();
     renderPages();
     persistDb();
@@ -3267,11 +3302,9 @@
   function renderPages(){
     elPages.innerHTML = "";
     if(!report) return;
-    var perPage = report.perPage || 4;
-    var minPages = report.minPages || 0;
-
-    var pagesFromPhotos = report.photos.length ? Math.ceil(report.photos.length / perPage) : 0;
-    var total = Math.max(pagesFromPhotos, minPages);
+    var slots = pageSlots(report);
+    var pagesFromPhotos = photoPageCount(report);
+    var total = slots.length;
 
     updatePageStepper(total, pagesFromPhotos);
 
@@ -3299,8 +3332,10 @@
     }
 
     for(var gi=0; gi<total; gi++){
+      var slot = slots[gi], perPage = slot.per;
+      elPages.appendChild(buildPageTools(gi, slot.key));
       var page = document.createElement("div");
-      page.className = "a4-page" + (report.layout === "h1" ? " landscape" : "");
+      page.className = "a4-page" + (slot.landscape ? " landscape" : "");
       page.dataset.pageIndex = gi;
 
       page.appendChild(buildHeader());
@@ -3313,7 +3348,7 @@
       grid.style.gridTemplateRows = "repeat(" + rows + ", 1fr)";
 
       for(var i=0; i<perPage; i++){
-        var globalIndex = gi * perPage + i;
+        var globalIndex = slot.start + i;
         var photo = report.photos[globalIndex];
         grid.appendChild(photo ? buildCell(photo, globalIndex) : buildPlaceholderCell());
       }
@@ -3335,6 +3370,32 @@
 
     elPageCount.textContent = total + " ページ";
     switchView();
+  }
+
+  // 各ページの上に出す、そのページだけのレイアウト選択（書き出しには含まれない）
+  function buildPageTools(pageIdx, key){
+    var bar = document.createElement("div");
+    bar.className = "page-tools";
+    var no = document.createElement("span");
+    no.className = "pt-no";
+    no.textContent = (pageIdx + 1) + "ページ目";
+    var lab = document.createElement("label");
+    lab.appendChild(document.createTextNode("このページのレイアウト"));
+    var sel = document.createElement("select");
+    sel.setAttribute("aria-label", (pageIdx + 1) + "ページ目のレイアウト");
+    populateLayoutSelect(sel, key);
+    sel.addEventListener("change", function(){
+      if(!report) return;
+      var arr = report.pageLayouts || (report.pageLayouts = []);
+      while(arr.length < pageIdx) arr.push("");
+      arr[pageIdx] = sel.value;
+      touch();
+      renderPages();
+      persistDb();
+    });
+    lab.appendChild(sel);
+    bar.appendChild(no); bar.appendChild(lab);
+    return bar;
   }
 
   function updatePageStepper(total, pagesFromPhotos){
